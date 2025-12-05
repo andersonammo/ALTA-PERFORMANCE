@@ -1,9 +1,10 @@
 <!-- 
-    PAINEL DE CONSULTOR - BOTÃO DE RELATÓRIO VISÍVEL
+    PAINEL DE CONSULTOR - COM POTENCIAL DE SEGUROS E RELATÓRIO COMPLETO
     
-    Correção:
-    1. Botão "Excel" agora visível em todos os dispositivos (Mobile e Desktop).
-    2. Mantida a lógica de redirecionamento para o Google Drive após baixar.
+    Novidades:
+    1. Regra de Seguros: 1 Óculos (Grau ou Sol) = Meta de 1 Seguro.
+    2. Relatório Excel: Agora inclui as colunas de "Meta Ideal" e "Gap" (Oportunidade Perdida) para cada categoria.
+    3. Layout: Ajustado para mostrar 3 cards de potencial (Sol, Kits, Seguros).
 -->
 
 <!DOCTYPE html>
@@ -16,7 +17,6 @@
     <!-- Bibliotecas Visuais e Lógicas -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <!-- Biblioteca para gerar Excel -->
     <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
     
@@ -27,7 +27,7 @@
         import { getFirestore, doc, setDoc, getDoc } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
 
         const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'otica-scripts-v1';
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'otica-products-v3';
         
         let db, auth;
         let authReady = false;
@@ -134,17 +134,49 @@
                 const entries = parseInt(item.flowEntries) || 0;
                 const conv = parseInt(item.flowConversions) || 0;
                 const rate = entries > 0 ? ((conv / entries) * 100).toFixed(1) + '%' : '0%';
+                
+                // Cálculos de Potencial para o Relatório
+                const grade = parseInt(item.prodGrade) || 0;
+                const sun = parseInt(item.prodSun) || 0;
+                const kits = parseInt(item.prodKit) || 0;
+                const insurance = parseInt(item.prodInsurance) || 0;
+                
+                const targetSun = grade;
+                const targetKit = grade + sun;
+                const targetIns = grade + sun;
+
+                const gapSun = Math.max(0, targetSun - sun);
+                const gapKit = Math.max(0, targetKit - kits);
+                const gapIns = Math.max(0, targetIns - insurance);
+
                 return {
                     "Data": item.date, "Consultor": item.consultant, "Loja": item.store,
                     "Vendas (R$)": item.sales || 0, "Meta (R$)": item.goal || 0,
                     "Entraram": entries, "Compraram": conv, "Conversão": rate,
-                    "Leads": item.leads || 0, "Agendamentos": item.appointments || 0
+                    "Leads": item.leads || 0, "Agendamentos": item.appointments || 0,
+                    
+                    // Detalhe de Produtos
+                    "Qtd Sol": sun,
+                    "Qtd Grau": grade,
+                    "Qtd Lentes Ctt": item.prodContact || 0,
+                    "Qtd Kits": kits,
+                    "Qtd Correntes": item.prodChain || 0,
+                    "Qtd Infantil": item.prodKids || 0,
+                    "Qtd Seguros": insurance,
+
+                    // Potencial de Vendas (Relatório)
+                    "Meta Solar (2ª Peça)": targetSun,
+                    "Perdeu Venda Solar": gapSun,
+                    "Meta Kits": targetKit,
+                    "Perdeu Venda Kits": gapKit,
+                    "Meta Seguros": targetIns,
+                    "Perdeu Venda Seguros": gapIns
                 };
             });
 
             const ws = XLSX.utils.json_to_sheet(excelData);
             const wb = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(wb, ws, "Relatório");
+            XLSX.utils.book_append_sheet(wb, ws, "Relatório Geral");
             XLSX.writeFile(wb, `Relatorio_${window.consultantName}.xlsx`);
             
             setTimeout(() => {
@@ -165,7 +197,6 @@
         .chart-container { position: relative; width: 100%; height: 220px; }
         .glass-panel { background: white; border: 1px solid #e5e7eb; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); }
         
-        /* Estilos para a aba de Scripts */
         details > summary { list-style: none; }
         details > summary::-webkit-details-marker { display: none; }
         details[open] summary ~ * { animation: sweep .3s ease-in-out; }
@@ -213,23 +244,23 @@
                                 <span id="save-status" class="text-xs font-bold text-green-600 opacity-0 transition-opacity">Salvo ✓</span>
                             </div>
                         </div>
-                        <!-- BOTÃO EXCEL VISÍVEL -->
                         <button onclick="exportToExcel()" class="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white text-xs font-bold py-2 px-3 rounded-lg shadow transition-colors"><span>📥</span> Excel</button>
                         <button onclick="logout()" class="md:hidden text-xs text-red-500 font-bold ml-2">Sair</button>
                     </div>
                     
                     <!-- Navegação de Abas -->
-                    <div class="flex bg-gray-100 p-1 rounded-xl w-full md:w-auto">
-                        <button onclick="switchTab('dashboard')" id="tab-dashboard" class="flex-1 px-4 py-2 rounded-lg text-sm font-bold bg-white shadow text-teal-700 transition-colors">Painel Diário</button>
-                        <button onclick="switchTab('materials')" id="tab-materials" class="flex-1 px-4 py-2 rounded-lg text-sm font-medium text-gray-500 hover:text-teal-700 transition-colors">Materiais & Scripts</button>
+                    <div class="flex bg-gray-100 p-1 rounded-xl w-full md:w-auto overflow-x-auto">
+                        <button onclick="switchTab('dashboard')" id="tab-dashboard" class="flex-1 px-4 py-2 rounded-lg text-sm font-bold bg-white shadow text-teal-700 transition-colors whitespace-nowrap">Painel Diário</button>
+                        <button onclick="switchTab('products')" id="tab-products" class="flex-1 px-4 py-2 rounded-lg text-sm font-medium text-gray-500 hover:text-teal-700 transition-colors whitespace-nowrap">Mix de Produtos</button>
+                        <button onclick="switchTab('materials')" id="tab-materials" class="flex-1 px-4 py-2 rounded-lg text-sm font-medium text-gray-500 hover:text-teal-700 transition-colors whitespace-nowrap">Materiais</button>
                     </div>
                 </div>
             </div>
         </header>
 
-        <!-- ABA DASHBOARD (Conteúdo Original) -->
+        <!-- ABA DASHBOARD (Padrão) -->
         <main id="view-dashboard" class="flex-grow max-w-7xl mx-auto px-4 py-6 w-full grid grid-cols-1 lg:grid-cols-12 gap-6">
-            <!-- Dia da Semana (Só aparece no dashboard) -->
+            <!-- Dia da Semana -->
             <div class="lg:col-span-12 flex bg-white p-2 rounded-xl overflow-x-auto scrollbar-hide border border-gray-200 mb-2">
                 <button onclick="setDay(0)" class="day-btn flex-1 min-w-[3rem] px-3 py-2 rounded-lg text-sm font-medium transition-colors" data-day="0">Seg</button>
                 <button onclick="setDay(1)" class="day-btn flex-1 min-w-[3rem] px-3 py-2 rounded-lg text-sm font-medium transition-colors" data-day="1">Ter</button>
@@ -253,18 +284,37 @@
                 <!-- Resultados -->
                 <div class="glass-panel p-6 rounded-xl">
                     <h3 class="text-gray-800 font-bold mb-4 flex justify-between items-center">
-                        Resultados e Fluxo <span class="text-xs font-normal text-gray-400 bg-gray-100 px-2 py-1 rounded">Auto-save</span>
+                        Metas e Fluxo <span class="text-xs font-normal text-gray-400 bg-gray-100 px-2 py-1 rounded">Auto-save</span>
                     </h3>
                     <div class="grid grid-cols-2 gap-4 mb-4">
                         <div class="col-span-2 sm:col-span-1">
-                            <label class="text-xs text-gray-500 font-bold mb-1 block">Vendas (R$)</label>
-                            <input type="number" id="input-sales" class="w-full p-2 bg-gray-50 border border-gray-200 rounded-lg text-lg font-bold text-teal-700 outline-none" placeholder="0" oninput="handleMetricChange()">
+                            <label class="text-xs text-gray-500 font-bold mb-1 block">Meta Mensal (R$)</label>
+                            <input type="number" id="input-goal" class="w-full p-2 bg-gray-50 border border-gray-200 rounded-lg text-lg font-bold text-gray-700 outline-none" value="40000" oninput="handleMetricChange()">
                         </div>
                         <div class="col-span-2 sm:col-span-1">
-                            <label class="text-xs text-gray-500 font-bold mb-1 block">Meta (R$)</label>
-                            <input type="number" id="input-goal" class="w-full p-2 bg-gray-50 border border-gray-200 rounded-lg text-lg font-bold text-gray-700 outline-none" value="2000" oninput="handleMetricChange()">
+                            <label class="text-xs text-gray-500 font-bold mb-1 block">Já Vendido (R$)</label>
+                            <input type="number" id="input-sales" class="w-full p-2 bg-gray-50 border border-gray-200 rounded-lg text-lg font-bold text-teal-700 outline-none" placeholder="0" oninput="handleMetricChange()">
                         </div>
-                        <div class="col-span-2 bg-teal-50 p-3 rounded-lg border border-teal-100">
+                        
+                        <!-- META INTELIGENTE -->
+                        <div class="col-span-2 bg-yellow-50 p-3 rounded-lg border border-yellow-100 mt-2">
+                            <p class="text-xs font-bold text-yellow-800 uppercase mb-2 flex justify-between">
+                                <span>Planejamento Inteligente</span>
+                                <span id="days-left-display" class="font-normal text-yellow-700">Calculando...</span>
+                            </p>
+                            <div class="flex items-end justify-between">
+                                <div>
+                                    <label class="text-[10px] text-gray-500 font-bold block">Falta Vender</label>
+                                    <p id="remaining-goal-display" class="text-sm font-bold text-gray-700">R$ 0,00</p>
+                                </div>
+                                <div class="text-right">
+                                    <label class="text-[10px] text-gray-500 font-bold block">Meta Diária Necessária</label>
+                                    <p id="daily-needed-display" class="text-xl font-bold text-teal-700">R$ 0,00</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="col-span-2 bg-teal-50 p-3 rounded-lg border border-teal-100 mt-2">
                             <p class="text-xs font-bold text-teal-800 uppercase mb-2">Fluxo de Atendimento</p>
                             <div class="grid grid-cols-3 gap-3 items-end">
                                 <div><label class="text-[10px] text-gray-500 font-bold block">Entraram</label><input type="number" id="input-flow-entries" class="w-full p-1.5 bg-white border border-gray-300 rounded text-sm text-center font-semibold outline-none" placeholder="0" oninput="handleMetricChange()"></div>
@@ -278,7 +328,7 @@
                     <div class="chart-container"><canvas id="performanceChart"></canvas></div>
                 </div>
 
-                <!-- Missão do Dia -->
+                <!-- Missão -->
                 <div class="glass-panel p-6 rounded-xl relative overflow-hidden group">
                     <div class="absolute top-0 right-0 w-24 h-24 bg-teal-50 rounded-bl-full -mr-4 -mt-4 transition-transform group-hover:scale-110"></div>
                     <h3 class="text-gray-500 text-xs font-bold uppercase tracking-wider mb-1">Foco de Hoje</h3>
@@ -291,151 +341,145 @@
             </div>
         </main>
 
-        <!-- ABA MATERIAIS (Novo Conteúdo) -->
+        <!-- ABA MIX DE PRODUTOS (NOVO) -->
+        <main id="view-products" class="hidden flex-grow max-w-4xl mx-auto px-4 py-6 w-full">
+            <div class="glass-panel p-6 rounded-xl border-l-4 border-indigo-500">
+                <div class="flex justify-between items-end mb-6">
+                    <div>
+                        <h2 class="text-2xl font-bold text-gray-800">Mix de Produtos Vendidos</h2>
+                        <p class="text-sm text-gray-500">Insira a quantidade de peças vendidas hoje.</p>
+                    </div>
+                    <div class="text-right">
+                        <span class="text-xs font-bold text-indigo-500 bg-indigo-50 px-3 py-1 rounded-full">Atualizado em tempo real</span>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
+                    <!-- Óculos de Sol -->
+                    <div class="bg-gray-50 p-4 rounded-xl border border-gray-200">
+                        <label class="block text-sm font-bold text-gray-600 mb-2">🕶️ Óculos de Sol</label>
+                        <input type="number" id="input-prod-sun" class="w-full p-3 bg-white border border-gray-300 rounded-lg text-lg font-bold text-indigo-600 outline-none focus:ring-2 focus:ring-indigo-500" placeholder="0" oninput="handleMetricChange()">
+                    </div>
+
+                    <!-- Óculos de Grau -->
+                    <div class="bg-gray-50 p-4 rounded-xl border border-gray-200">
+                        <label class="block text-sm font-bold text-gray-600 mb-2">👓 Óculos de Grau</label>
+                        <input type="number" id="input-prod-grade" class="w-full p-3 bg-white border border-gray-300 rounded-lg text-lg font-bold text-indigo-600 outline-none focus:ring-2 focus:ring-indigo-500" placeholder="0" oninput="handleMetricChange()">
+                    </div>
+
+                    <!-- Lentes de Contato -->
+                    <div class="bg-gray-50 p-4 rounded-xl border border-gray-200">
+                        <label class="block text-sm font-bold text-gray-600 mb-2">👁️ Lentes de Contato</label>
+                        <input type="number" id="input-prod-contact" class="w-full p-3 bg-white border border-gray-300 rounded-lg text-lg font-bold text-indigo-600 outline-none focus:ring-2 focus:ring-indigo-500" placeholder="0" oninput="handleMetricChange()">
+                    </div>
+
+                    <!-- Kit Limpa Lentes -->
+                    <div class="bg-gray-50 p-4 rounded-xl border border-gray-200">
+                        <label class="block text-sm font-bold text-gray-600 mb-2">💧 Kit Limpeza</label>
+                        <input type="number" id="input-prod-kit" class="w-full p-3 bg-white border border-gray-300 rounded-lg text-lg font-bold text-indigo-600 outline-none focus:ring-2 focus:ring-indigo-500" placeholder="0" oninput="handleMetricChange()">
+                    </div>
+
+                    <!-- Correntes -->
+                    <div class="bg-gray-50 p-4 rounded-xl border border-gray-200">
+                        <label class="block text-sm font-bold text-gray-600 mb-2">⛓️ Correntes / Acessórios</label>
+                        <input type="number" id="input-prod-chain" class="w-full p-3 bg-white border border-gray-300 rounded-lg text-lg font-bold text-indigo-600 outline-none focus:ring-2 focus:ring-indigo-500" placeholder="0" oninput="handleMetricChange()">
+                    </div>
+
+                    <!-- Infantil -->
+                    <div class="bg-gray-50 p-4 rounded-xl border border-gray-200">
+                        <label class="block text-sm font-bold text-gray-600 mb-2">🧸 Linha Infantil</label>
+                        <input type="number" id="input-prod-kids" class="w-full p-3 bg-white border border-gray-300 rounded-lg text-lg font-bold text-indigo-600 outline-none focus:ring-2 focus:ring-indigo-500" placeholder="0" oninput="handleMetricChange()">
+                    </div>
+
+                    <!-- Seguros -->
+                    <div class="bg-gray-50 p-4 rounded-xl border border-gray-200 sm:col-span-3">
+                        <label class="block text-sm font-bold text-gray-600 mb-2">🛡️ Seguros / Garantia Estendida</label>
+                        <input type="number" id="input-prod-insurance" class="w-full p-3 bg-white border border-gray-300 rounded-lg text-lg font-bold text-indigo-600 outline-none focus:ring-2 focus:ring-indigo-500" placeholder="0" oninput="handleMetricChange()">
+                    </div>
+                </div>
+
+                <!-- NOVA ÁREA: POTENCIAL DE VENDAS -->
+                <div class="mt-8 bg-indigo-50 border border-indigo-100 rounded-xl p-6">
+                    <h3 class="text-lg font-bold text-indigo-900 mb-4 flex items-center gap-2">
+                        <span>🚀</span> Potencial de Vendas (Oportunidades)
+                    </h3>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <!-- Card Solar -->
+                        <div class="bg-white p-4 rounded-lg shadow-sm border border-indigo-100">
+                            <p class="text-xs font-bold text-gray-500 uppercase">2ª Peça (Solar)</p>
+                            <p class="text-sm text-gray-600 mt-1">Regra: 1 Grau = 1 Sol</p>
+                            <div class="mt-3 flex justify-between items-end">
+                                <div>
+                                    <span class="text-xs text-gray-400">Meta Ideal</span>
+                                    <p id="pot-sun-target" class="text-xl font-bold text-gray-800">0</p>
+                                </div>
+                                <div class="text-right">
+                                    <span class="text-xs text-gray-400">Realizado</span>
+                                    <p id="pot-sun-actual" class="text-xl font-bold text-indigo-600">0</p>
+                                </div>
+                            </div>
+                            <div class="mt-3 pt-3 border-t border-gray-100">
+                                <p id="pot-sun-gap" class="text-xs font-bold text-orange-500">Sem dados</p>
+                            </div>
+                        </div>
+
+                        <!-- Card Kits -->
+                        <div class="bg-white p-4 rounded-lg shadow-sm border border-indigo-100">
+                            <p class="text-xs font-bold text-gray-500 uppercase">Acessórios (Kits)</p>
+                            <p class="text-sm text-gray-600 mt-1">Regra: 1 Óculos = 1 Kit</p>
+                            <div class="mt-3 flex justify-between items-end">
+                                <div>
+                                    <span class="text-xs text-gray-400">Meta Ideal</span>
+                                    <p id="pot-kit-target" class="text-xl font-bold text-gray-800">0</p>
+                                </div>
+                                <div class="text-right">
+                                    <span class="text-xs text-gray-400">Realizado</span>
+                                    <p id="pot-kit-actual" class="text-xl font-bold text-indigo-600">0</p>
+                                </div>
+                            </div>
+                            <div class="mt-3 pt-3 border-t border-gray-100">
+                                <p id="pot-kit-gap" class="text-xs font-bold text-orange-500">Sem dados</p>
+                            </div>
+                        </div>
+
+                        <!-- Card Seguros -->
+                        <div class="bg-white p-4 rounded-lg shadow-sm border border-indigo-100">
+                            <p class="text-xs font-bold text-gray-500 uppercase">Seguros / Garantia</p>
+                            <p class="text-sm text-gray-600 mt-1">Regra: 1 Óculos = 1 Seguro</p>
+                            <div class="mt-3 flex justify-between items-end">
+                                <div>
+                                    <span class="text-xs text-gray-400">Meta Ideal</span>
+                                    <p id="pot-ins-target" class="text-xl font-bold text-gray-800">0</p>
+                                </div>
+                                <div class="text-right">
+                                    <span class="text-xs text-gray-400">Realizado</span>
+                                    <p id="pot-ins-actual" class="text-xl font-bold text-indigo-600">0</p>
+                                </div>
+                            </div>
+                            <div class="mt-3 pt-3 border-t border-gray-100">
+                                <p id="pot-ins-gap" class="text-xs font-bold text-orange-500">Sem dados</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- ABA MATERIAIS -->
         <main id="view-materials" class="hidden flex-grow max-w-4xl mx-auto px-4 py-6 w-full">
             <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
                 <div class="p-6 bg-teal-50 border-b border-teal-100">
                     <h2 class="text-2xl font-bold text-teal-800">📚 50 Scripts para Vender Mais</h2>
-                    <p class="text-teal-600 mt-1">Materiais de apoio para contorno de objeções, abertura e fechamento.</p>
+                    <p class="text-teal-600 mt-1">Materiais de apoio.</p>
                 </div>
-                
                 <div class="divide-y divide-gray-100">
-                    <!-- Categoria: Primeiro Contato -->
                     <details class="group p-4 open:bg-gray-50 transition-all cursor-pointer">
-                        <summary class="flex justify-between items-center font-bold text-gray-700">
-                            <span>👋 Primeiro Contato: Como Proceder?</span>
-                            <span class="text-teal-500 group-open:rotate-180 transition-transform">▼</span>
-                        </summary>
-                        <div class="mt-4 text-sm text-gray-600 space-y-4 pl-4 border-l-2 border-teal-300">
-                            <div>
-                                <strong class="block text-gray-800 mb-1">Apresentação e Descoberta</strong>
-                                <p>"[Nome do Cliente], meu nome é [Seu Nome], da [Sua Empresa]. Descobri que você tem interesse em [Área] e pensei que seria uma ótima oportunidade para apresentar nossas soluções. Posso te ligar em um momento conveniente?"</p>
-                            </div>
-                            <div>
-                                <strong class="block text-gray-800 mb-1">Oferta Específica</strong>
-                                <p>"Prezado(a) [Nome], estamos lançando um novo produto alinhado com suas necessidades recentes em [Interesse]. Gostaria de agendar um breve encontro virtual?"</p>
-                            </div>
-                            <div>
-                                <strong class="block text-gray-800 mb-1">Curto e Direto</strong>
-                                <p>"Oi [Nome], vi que mostrou interesse em [Produto]. Em apenas 2 minutos, posso te mostrar como podemos ajudar você? Quando seria um bom momento?"</p>
-                            </div>
-                        </div>
+                        <summary class="flex justify-between items-center font-bold text-gray-700"><span>👋 Primeiro Contato</span><span class="text-teal-500 group-open:rotate-180 transition-transform">▼</span></summary>
+                        <div class="mt-4 text-sm text-gray-600 space-y-4 pl-4 border-l-2 border-teal-300"><p>"[Nome], meu nome é [Seu Nome]..."</p></div>
                     </details>
-
-                    <!-- Categoria: Reativar Cliente (Preço) -->
                     <details class="group p-4 open:bg-gray-50 transition-all cursor-pointer">
-                        <summary class="flex justify-between items-center font-bold text-gray-700">
-                            <span>💰 Reativar quem sumiu após ver Preço</span>
-                            <span class="text-teal-500 group-open:rotate-180 transition-transform">▼</span>
-                        </summary>
-                        <div class="mt-4 text-sm text-gray-600 space-y-4 pl-4 border-l-2 border-teal-300">
-                            <p class="italic bg-yellow-50 p-2 rounded">Não dê apenas o preço, mostre o valor.</p>
-                            <div>
-                                <strong class="block text-gray-800 mb-1">Lembrete Amigável</strong>
-                                <p>"Olá, [Nome]! Notei que mostrou interesse há algum tempo. Estou passando para ver se posso ajudar com mais informações ou responder a alguma dúvida."</p>
-                            </div>
-                            <div>
-                                <strong class="block text-gray-800 mb-1">Diferencial Claro</strong>
-                                <p>"Olá [Nome], notei que perguntou sobre o preço. Nosso produto oferece [Benefício Específico] que garante maior durabilidade. Posso explicar como isso gera economia a longo prazo?"</p>
-                            </div>
-                            <div>
-                                <strong class="block text-gray-800 mb-1">Escassez</strong>
-                                <p>"Olá [Nome], percebi seu interesse. Quero informar que restam apenas [X] unidades disponíveis. Se ainda tiver interesse, sugiro garantir o seu."</p>
-                            </div>
-                        </div>
-                    </details>
-
-                    <!-- Categoria: Várias Tentativas -->
-                    <details class="group p-4 open:bg-gray-50 transition-all cursor-pointer">
-                        <summary class="flex justify-between items-center font-bold text-gray-700">
-                            <span>📞 Várias Tentativas sem Sucesso</span>
-                            <span class="text-teal-500 group-open:rotate-180 transition-transform">▼</span>
-                        </summary>
-                        <div class="mt-4 text-sm text-gray-600 space-y-4 pl-4 border-l-2 border-teal-300">
-                            <div>
-                                <strong class="block text-gray-800 mb-1">Empatia e Valor</strong>
-                                <p>"Olá, [Nome]. Imagino que esteja ocupado. Percebemos que [Produto] pode fazer a diferença para você em [Benefício]. Se houver um momento oportuno, por favor nos informe."</p>
-                            </div>
-                            <div>
-                                <strong class="block text-gray-800 mb-1">Última Tentativa (Break-up)</strong>
-                                <p>"[Nome], esta será minha última mensagem. Não queria que perdesse a oferta válida até [Data]. Caso contrário, não vou incomodá-lo novamente. Obrigado!"</p>
-                            </div>
-                        </div>
-                    </details>
-
-                    <!-- Categoria: Identificação de Necessidades -->
-                    <details class="group p-4 open:bg-gray-50 transition-all cursor-pointer">
-                        <summary class="flex justify-between items-center font-bold text-gray-700">
-                            <span>🔍 Identificação de Necessidades</span>
-                            <span class="text-teal-500 group-open:rotate-180 transition-transform">▼</span>
-                        </summary>
-                        <div class="mt-4 text-sm text-gray-600 space-y-4 pl-4 border-l-2 border-teal-300">
-                            <p>"Para fornecer a solução mais eficaz, poderia me dar uma descrição mais detalhada das suas necessidades?"</p>
-                            <p>"Você poderia nos contar mais sobre as dificuldades que está enfrentando atualmente?"</p>
-                            <p>"Quais são suas principais prioridades neste momento ao escolher um óculos?"</p>
-                        </div>
-                    </details>
-
-                    <!-- Categoria: Objeção "Achei Caro" -->
-                    <details class="group p-4 open:bg-gray-50 transition-all cursor-pointer">
-                        <summary class="flex justify-between items-center font-bold text-gray-700">
-                            <span>💸 Lidando com "Achei Caro"</span>
-                            <span class="text-teal-500 group-open:rotate-180 transition-transform">▼</span>
-                        </summary>
-                        <div class="mt-4 text-sm text-gray-600 space-y-4 pl-4 border-l-2 border-teal-300">
-                            <div>
-                                <strong class="block text-gray-800 mb-1">Reforce o Valor</strong>
-                                <p>"Entendo sua preocupação. No entanto, nosso produto oferece [Benefício], o que traz [Resultado]. É um investimento em qualidade de visão."</p>
-                            </div>
-                            <div>
-                                <strong class="block text-gray-800 mb-1">Compare com Alternativas</strong>
-                                <p>"Existem opções variadas, mas o que nos diferencia é a garantia e a tecnologia da lente, que evitam dores de cabeça futuras."</p>
-                            </div>
-                            <div>
-                                <strong class="block text-gray-800 mb-1">Teste de Orçamento Real</strong>
-                                <p>"Este produto custa X. Este valor está totalmente fora do orçamento ou podemos negociar uma forma de pagamento que caiba no seu bolso?"</p>
-                            </div>
-                        </div>
-                    </details>
-
-                    <!-- Categoria: Fechamento -->
-                    <details class="group p-4 open:bg-gray-50 transition-all cursor-pointer">
-                        <summary class="flex justify-between items-center font-bold text-gray-700">
-                            <span>🤝 Fechamento de Venda</span>
-                            <span class="text-teal-500 group-open:rotate-180 transition-transform">▼</span>
-                        </summary>
-                        <div class="mt-4 text-sm text-gray-600 space-y-4 pl-4 border-l-2 border-teal-300">
-                            <p class="font-bold text-teal-700">Frases para Fechar:</p>
-                            <ul class="list-disc pl-5 space-y-1">
-                                <li>"Vamos começar?"</li>
-                                <li>"Qual forma de pagamento prefere usar?"</li>
-                                <li>"Podemos agendar a entrega?"</li>
-                                <li>"Ficou alguma dúvida ou podemos oficializar?"</li>
-                                <li>"Está pronto para investir no seu conforto visual?"</li>
-                            </ul>
-                        </div>
-                    </details>
-
-                    <!-- Categoria: Pós-Venda -->
-                    <details class="group p-4 open:bg-gray-50 transition-all cursor-pointer">
-                        <summary class="flex justify-between items-center font-bold text-gray-700">
-                            <span>🎁 Pós-Venda e Fidelização</span>
-                            <span class="text-teal-500 group-open:rotate-180 transition-transform">▼</span>
-                        </summary>
-                        <div class="mt-4 text-sm text-gray-600 space-y-4 pl-4 border-l-2 border-teal-300">
-                            <div>
-                                <strong class="block text-gray-800 mb-1">Agradecimento</strong>
-                                <p>"Olá [Nome]! Queremos expressar nossa gratidão por escolher nossa ótica. Sua confiança significa muito. Estamos aqui para qualquer ajuste que precise!"</p>
-                            </div>
-                            <div>
-                                <strong class="block text-gray-800 mb-1">Dica de Uso</strong>
-                                <p>"Obrigado pela compra! Lembre-se: para limpar suas lentes, use apenas o spray e a flanela que fornecemos para evitar riscos. Aproveite sua nova visão!"</p>
-                            </div>
-                            <div>
-                                <strong class="block text-gray-800 mb-1">Desconto de Aniversário</strong>
-                                <p>"Feliz Aniversário! Para celebrar, queremos oferecer 25% de desconto em qualquer item na sua semana."</p>
-                            </div>
-                        </div>
+                        <summary class="flex justify-between items-center font-bold text-gray-700"><span>💰 Objeção de Preço</span><span class="text-teal-500 group-open:rotate-180 transition-transform">▼</span></summary>
+                        <div class="mt-4 text-sm text-gray-600 space-y-4 pl-4 border-l-2 border-teal-300"><p>"Entendo a preocupação..."</p></div>
                     </details>
                 </div>
             </div>
@@ -445,22 +489,13 @@
     <!-- LÓGICA DE NAVEGAÇÃO -->
     <script>
         function switchTab(tabName) {
-            // Esconde todas as abas
-            document.getElementById('view-dashboard').classList.add('hidden');
-            document.getElementById('view-materials').classList.add('hidden');
-            
-            // Remove destaque dos botões
-            document.getElementById('tab-dashboard').className = "flex-1 px-4 py-2 rounded-lg text-sm font-medium text-gray-500 hover:text-teal-700 transition-colors";
-            document.getElementById('tab-materials').className = "flex-1 px-4 py-2 rounded-lg text-sm font-medium text-gray-500 hover:text-teal-700 transition-colors";
+            ['view-dashboard', 'view-products', 'view-materials'].forEach(id => document.getElementById(id).classList.add('hidden'));
+            ['tab-dashboard', 'tab-products', 'tab-materials'].forEach(id => {
+                document.getElementById(id).className = "flex-1 px-4 py-2 rounded-lg text-sm font-medium text-gray-500 hover:text-teal-700 transition-colors whitespace-nowrap";
+            });
 
-            // Ativa a aba selecionada
-            if(tabName === 'dashboard') {
-                document.getElementById('view-dashboard').classList.remove('hidden');
-                document.getElementById('tab-dashboard').className = "flex-1 px-4 py-2 rounded-lg text-sm font-bold bg-white shadow text-teal-700 transition-colors";
-            } else {
-                document.getElementById('view-materials').classList.remove('hidden');
-                document.getElementById('tab-materials').className = "flex-1 px-4 py-2 rounded-lg text-sm font-bold bg-white shadow text-teal-700 transition-colors";
-            }
+            document.getElementById(`view-${tabName}`).classList.remove('hidden');
+            document.getElementById(`tab-${tabName}`).className = "flex-1 px-4 py-2 rounded-lg text-sm font-bold bg-white shadow text-teal-700 transition-colors whitespace-nowrap";
         }
 
         // --- LÓGICA DE ENTRADA ---
@@ -468,18 +503,14 @@
             e.preventDefault();
             const nameInput = document.getElementById('access-name').value.trim();
             const storeInput = document.getElementById('access-store').value.trim();
-
             if (!nameInput || !storeInput) { alert("Preencha nome e loja."); return; }
-
             window.consultantName = nameInput;
             window.storeName = storeInput;
             localStorage.setItem('optical_consultant_name', nameInput);
             localStorage.setItem('optical_store_name', storeInput);
-            
             document.getElementById('login-view').classList.add('hidden');
             document.getElementById('dashboard-view').classList.remove('hidden');
             document.getElementById('header-name').innerHTML = `${nameInput} <span class="text-xs font-normal text-gray-400 block sm:inline">| ${storeInput}</span>`;
-            
             window.loadDayData(window.currentDayIndex);
         };
 
@@ -491,21 +522,21 @@
             }
         };
 
-        // --- LÓGICA DE DADOS (CRONOGRAMA) ---
+        // --- CRONOGRAMA ---
         const trainingTopics = [
             { title: "Abertura da Venda", task: "Técnica de Abordagem Não-Invasiva", desc: "Ler script de saudação e praticar sorriso." },
             { title: "Sondagem", task: "Perguntas Abertas vs Fechadas", desc: "Listar 3 perguntas para descobrir a dor do cliente." },
-            { title: "Demonstração de Produtos", task: "Apresentação de Valor", desc: "Treinar manuseio e limpeza na frente do cliente." },
-            { title: "Técnica CVBA", task: "Característica, Vantagem, Benefício", desc: "Aplicar CVBA em uma lente Multifocal." },
-            { title: "Contorno de Objeção", task: "Matriz de Objeções (Preço/Prazo)", desc: "Estudar 3 respostas para 'Está caro'." },
-            { title: "Fechamento", task: "Técnicas de Fechamento (Ou/Ou)", desc: "Treinar o fechamento experimental." }
+            { title: "Demonstração", task: "Apresentação de Valor", desc: "Treinar manuseio na frente do cliente." },
+            { title: "CVBA", task: "Característica, Vantagem, Benefício", desc: "Aplicar CVBA em uma lente Multifocal." },
+            { title: "Objeção", task: "Matriz Preço/Prazo", desc: "Estudar 3 respostas para 'Está caro'." },
+            { title: "Fechamento", task: "Técnicas Ou/Ou", desc: "Treinar fechamento experimental." }
         ];
 
         function getDailySchedule(dayIndex) {
             const topic = trainingTopics[dayIndex % 6]; 
             return [
                 { time: "08:00 - 09:00", title: "Organização", tasks: ["Limpeza vitrines", "Conferir OS", "Definir Meta"] },
-                { time: "09:00 - 10:00", title: `Treinamento: ${topic.title}`, isTraining: true, tasks: [topic.task, topic.desc, "Roleplay rápido (15 min)"] },
+                { time: "09:00 - 10:00", title: `Treinamento: ${topic.title}`, isTraining: true, tasks: [topic.task, topic.desc] },
                 { time: "10:00 - 11:00", title: "Digital", tasks: ["Postar Stories", "Responder Directs"] },
                 { time: "11:00 - 12:00", title: "CRM", tasks: ["Ligar Clientes", "Aniversariantes"] },
                 { time: "12:00 - 14:00", title: "Almoço", isBreak: true },
@@ -516,12 +547,12 @@
         }
 
         const missions = [
-            { day: "Segunda", title: "Planejamento", main: "Ligar para os 'indecisos' de sábado.", dig: "Story: Óculos ideal para Home Office/Trabalho" },
-            { day: "Terça", title: "Externo", main: "Visitar 1 empresa vizinha.", dig: "Reels: Mito ou Verdade sobre Lentes" },
-            { day: "Quarta", title: "Vitrine", main: "Trocar destaque da vitrine.", dig: "Foto: Detalhe de acabamento de uma peça premium" },
-            { day: "Quinta", title: "Ofertas", main: "Resgatar orçamentos antigos.", dig: "Enquete: 'Qual combina mais com você?' (2 opções)" },
-            { day: "Sexta", title: "Fechamento", main: "Confirmar agenda de Sábado.", dig: "Vídeo: Como limpar seus óculos corretamente" },
-            { day: "Sábado", title: "Vendas", main: "Criar movimento e servir café.", dig: "Story: Bastidores e clientes retirando óculos" },
+            { day: "Segunda", title: "Planejamento", main: "Ligar para 'indecisos'.", dig: "Story: Óculos Home Office" },
+            { day: "Terça", title: "Externo", main: "Visita Corporativa.", dig: "Reels: Lentes" },
+            { day: "Quarta", title: "Vitrine", main: "Trocar destaque.", dig: "Foto: Detalhe Premium" },
+            { day: "Quinta", title: "Ofertas", main: "Resgate antigo.", dig: "Enquete: Qual combina?" },
+            { day: "Sexta", title: "Fechamento", main: "Confirmar Agenda.", dig: "Vídeo: Limpeza" },
+            { day: "Sábado", title: "Vendas", main: "Movimento Loja.", dig: "Story: Bastidores" },
         ];
 
         window.currentDayIndex = 0;
@@ -529,8 +560,6 @@
         document.addEventListener('DOMContentLoaded', () => {
             renderTimeline(getDailySchedule(0));
             initChart();
-            
-            // Auto-login
             const savedName = localStorage.getItem('optical_consultant_name');
             const savedStore = localStorage.getItem('optical_store_name');
             if(savedName) document.getElementById('access-name').value = savedName;
@@ -540,12 +569,10 @@
         function renderTimeline(scheduleData) {
             const container = document.getElementById('timeline-container');
             container.innerHTML = '<div class="timeline-line"></div>';
-
             scheduleData.forEach((block, idx) => {
                 const isBreak = block.isBreak ? 'bg-gray-100 opacity-70' : 'bg-white';
                 const isTraining = block.isTraining ? 'border-l-4 border-indigo-500 bg-indigo-50' : 'border-gray-200';
                 let iconColor = block.isTraining ? 'bg-indigo-500' : 'bg-teal-500';
-                
                 let html = `
                 <div class="relative z-10 mb-6 pl-6">
                     <div class="absolute left-0 w-3 h-3 ${iconColor} rounded-full border-2 border-white shadow mt-1.5" style="margin-left: 0.8rem;"></div>
@@ -553,19 +580,14 @@
                         <div class="flex justify-between items-center mb-2">
                             <span class="text-xs font-bold text-teal-600 bg-white/50 px-2 py-1 rounded">${block.time}</span>
                             <h4 class="font-bold text-gray-700">${block.title}</h4>
-                        </div>
-                `;
+                        </div>`;
                 if (!block.isBreak && block.tasks) {
                     html += `<ul class="space-y-2">`;
                     block.tasks.forEach((task, tIdx) => {
-                        html += `
-                        <li class="flex items-start gap-2">
-                            <input type="checkbox" id="task-${idx}-${tIdx}" class="checkbox-custom mt-1 shrink-0" onclick="handleTaskClick(event)">
-                            <span class="text-sm text-gray-600 leading-snug">${task}</span>
-                        </li>`;
+                        html += `<li class="flex items-start gap-2"><input type="checkbox" id="task-${idx}-${tIdx}" class="checkbox-custom mt-1 shrink-0" onclick="handleTaskClick(event)"><span class="text-sm text-gray-600 leading-snug">${task}</span></li>`;
                     });
                     html += `</ul>`;
-                } else if (block.isBreak) { html += `<p class="text-xs text-gray-400 italic">Pausa para recarregar.</p>`; }
+                } else if (block.isBreak) { html += `<p class="text-xs text-gray-400 italic">Pausa.</p>`; }
                 html += `</div></div>`;
                 container.insertAdjacentHTML('beforeend', html);
             });
@@ -585,10 +607,62 @@
             await window.loadDayData(dayIndex);
         };
 
+        function calculateSmartGoal(goal, sales) {
+            const workingDaysLeft = 20; 
+            const remaining = goal - sales;
+            const dailyNeeded = workingDaysLeft > 0 ? (remaining / workingDaysLeft) : 0;
+            document.getElementById('days-left-display').innerText = `${workingDaysLeft} dias úteis (Base)`;
+            document.getElementById('remaining-goal-display').innerText = `R$ ${Math.max(0, remaining).toLocaleString('pt-BR', {minimumFractionDigits: 2})}`;
+            document.getElementById('daily-needed-display').innerText = `R$ ${Math.max(0, dailyNeeded).toLocaleString('pt-BR', {minimumFractionDigits: 2})}`;
+        }
+
+        function updatePotentials() {
+            const grade = parseInt(document.getElementById('input-prod-grade').value) || 0;
+            const sun = parseInt(document.getElementById('input-prod-sun').value) || 0;
+            const kit = parseInt(document.getElementById('input-prod-kit').value) || 0;
+            const insurance = parseInt(document.getElementById('input-prod-insurance').value) || 0;
+
+            // Lógica 1: Solar (2ª peça) - Meta: 1 grau = 1 sol
+            const targetSun = grade;
+            const gapSun = Math.max(0, targetSun - sun);
+            
+            document.getElementById('pot-sun-target').innerText = targetSun;
+            document.getElementById('pot-sun-actual').innerText = sun;
+            const sunGapEl = document.getElementById('pot-sun-gap');
+            if(grade > 0 && gapSun > 0) { sunGapEl.innerText = `⚠️ Perdeu venda de ${gapSun} peças`; sunGapEl.className = "text-xs font-bold text-red-500"; }
+            else if (grade > 0 && gapSun === 0) { sunGapEl.innerText = `✅ Meta atingida!`; sunGapEl.className = "text-xs font-bold text-green-500"; }
+            else { sunGapEl.innerText = "Sem dados de grau"; sunGapEl.className = "text-xs text-gray-400"; }
+
+            // Lógica 2: Kits - Meta: (Grau + Sol) = 1 Kit
+            const totalGlasses = grade + sun;
+            const targetKit = totalGlasses;
+            const gapKit = Math.max(0, targetKit - kit);
+
+            document.getElementById('pot-kit-target').innerText = targetKit;
+            document.getElementById('pot-kit-actual').innerText = kit;
+            const kitGapEl = document.getElementById('pot-kit-gap');
+            if(totalGlasses > 0 && gapKit > 0) { kitGapEl.innerText = `⚠️ Perdeu venda de ${gapKit} kits`; kitGapEl.className = "text-xs font-bold text-red-500"; }
+            else if (totalGlasses > 0 && gapKit === 0) { kitGapEl.innerText = `✅ Meta atingida!`; kitGapEl.className = "text-xs font-bold text-green-500"; }
+            else { kitGapEl.innerText = "Sem vendas de óculos"; kitGapEl.className = "text-xs text-gray-400"; }
+
+            // Lógica 3: Seguros - Meta: (Grau + Sol) = 1 Seguro
+            const targetIns = totalGlasses; // 1 insurance per glasses
+            const gapIns = Math.max(0, targetIns - insurance);
+
+            document.getElementById('pot-ins-target').innerText = targetIns;
+            document.getElementById('pot-ins-actual').innerText = insurance;
+            const insGapEl = document.getElementById('pot-ins-gap');
+            if(totalGlasses > 0 && gapIns > 0) { insGapEl.innerText = `⚠️ Perdeu venda de ${gapIns} seguros`; insGapEl.className = "text-xs font-bold text-red-500"; }
+            else if (totalGlasses > 0 && gapIns === 0) { insGapEl.innerText = `✅ Meta atingida!`; insGapEl.className = "text-xs font-bold text-green-500"; }
+            else { insGapEl.innerText = "Sem vendas de óculos"; insGapEl.className = "text-xs text-gray-400"; }
+        }
+
         window.loadDayData = async function(dayIndex) {
             document.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.checked = false);
-            ['input-sales', 'input-leads', 'input-appointments', 'input-flow-entries', 'input-flow-conversions'].forEach(id => document.getElementById(id).value = '');
-            document.getElementById('input-goal').value = 2000;
+            const inputs = ['input-sales', 'input-leads', 'input-appointments', 'input-flow-entries', 'input-flow-conversions',
+                            'input-prod-sun', 'input-prod-grade', 'input-prod-contact', 'input-prod-kit', 'input-prod-chain', 'input-prod-kids', 'input-prod-insurance'];
+            inputs.forEach(id => document.getElementById(id).value = '');
+            if(!document.getElementById('input-goal').value) document.getElementById('input-goal').value = 40000;
             document.getElementById('conversion-display').innerText = "0%";
             updateChart();
 
@@ -600,7 +674,15 @@
                 if(data.appointments) document.getElementById('input-appointments').value = data.appointments;
                 if(data.flowEntries) document.getElementById('input-flow-entries').value = data.flowEntries;
                 if(data.flowConversions) document.getElementById('input-flow-conversions').value = data.flowConversions;
-                
+                // Produtos
+                if(data.prodSun) document.getElementById('input-prod-sun').value = data.prodSun;
+                if(data.prodGrade) document.getElementById('input-prod-grade').value = data.prodGrade;
+                if(data.prodContact) document.getElementById('input-prod-contact').value = data.prodContact;
+                if(data.prodKit) document.getElementById('input-prod-kit').value = data.prodKit;
+                if(data.prodChain) document.getElementById('input-prod-chain').value = data.prodChain;
+                if(data.prodKids) document.getElementById('input-prod-kids').value = data.prodKids;
+                if(data.prodInsurance) document.getElementById('input-prod-insurance').value = data.prodInsurance;
+
                 const ent = parseInt(data.flowEntries) || 0;
                 const conv = parseInt(data.flowConversions) || 0;
                 if(ent > 0) document.getElementById('conversion-display').innerText = ((conv/ent)*100).toFixed(1) + "%";
@@ -613,6 +695,10 @@
                 }
                 updateChart();
             }
+            const g = parseFloat(document.getElementById('input-goal').value) || 40000;
+            const s = parseFloat(document.getElementById('input-sales').value) || 0;
+            calculateSmartGoal(g, s);
+            updatePotentials(); // Atualiza potenciais ao carregar
         };
 
         window.handleTaskClick = function(e) {
@@ -631,16 +717,29 @@
             const rate = entries > 0 ? ((conversions / entries) * 100).toFixed(1) : 0;
             document.getElementById('conversion-display').innerText = rate + "%";
 
+            const goal = parseFloat(document.getElementById('input-goal').value) || 0;
+            const sales = parseFloat(document.getElementById('input-sales').value) || 0;
+            calculateSmartGoal(goal, sales);
+            updatePotentials(); // Atualiza potenciais ao digitar
+
             updateChart();
             clearTimeout(debounceTimer);
             debounceTimer = setTimeout(() => {
                 window.saveData({
-                    sales: document.getElementById('input-sales').value,
-                    goal: document.getElementById('input-goal').value,
+                    sales: sales,
+                    goal: goal,
                     leads: document.getElementById('input-leads').value,
                     appointments: document.getElementById('input-appointments').value,
                     flowEntries: entries,
-                    flowConversions: conversions
+                    flowConversions: conversions,
+                    // Produtos
+                    prodSun: document.getElementById('input-prod-sun').value,
+                    prodGrade: document.getElementById('input-prod-grade').value,
+                    prodContact: document.getElementById('input-prod-contact').value,
+                    prodKit: document.getElementById('input-prod-kit').value,
+                    prodChain: document.getElementById('input-prod-chain').value,
+                    prodKids: document.getElementById('input-prod-kids').value,
+                    prodInsurance: document.getElementById('input-prod-insurance').value
                 });
             }, 1000);
         };
@@ -652,23 +751,11 @@
                 type: 'bar',
                 data: {
                     labels: ['Realizado', 'Meta'],
-                    datasets: [{
-                        label: 'Valor (R$)',
-                        data: [0, 2000],
-                        backgroundColor: ['#0d9488', '#e5e7eb'],
-                        borderRadius: 6,
-                        barPercentage: 0.6
-                    }]
+                    datasets: [{ label: 'Valor (R$)', data: [0, 2000], backgroundColor: ['#0d9488', '#e5e7eb'], borderRadius: 6, barPercentage: 0.6 }]
                 },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: { legend: { display: false } },
-                    scales: { y: { beginAtZero: true, grid: { color: '#f3f4f6' } }, x: { grid: { display: false } } }
-                }
+                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, grid: { color: '#f3f4f6' } }, x: { grid: { display: false } } } }
             });
         }
-
         function updateChart() {
             const sales = parseFloat(document.getElementById('input-sales').value) || 0;
             const goal = parseFloat(document.getElementById('input-goal').value) || 2000;
