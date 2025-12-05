@@ -1,10 +1,9 @@
 <!-- 
-    PAINEL DE CONSULTOR COM ROTINA DE TREINAMENTO DIÁRIO
+    PAINEL DE CONSULTOR COM DICAS DIGITAIS RENOVADAS
     
     Atualizações:
-    1. Novo Bloco de Treinamento (09:00 - 10:00).
-    2. Tópicos específicos para cada dia da semana (Abertura, Sondagem, CVBA, etc.).
-    3. Reorganização dos horários para manter o dia produtivo.
+    1. Dicas Digitais Recriadas: Ações específicas para cada dia (Reels, Enquetes, Fotos Técnicas).
+    2. Foco em Autoridade e Engajamento nas redes sociais.
 -->
 
 <!DOCTYPE html>
@@ -454,12 +453,12 @@
         }
 
         const missions = [
-            { day: "Segunda", title: "Planejamento", main: "Ligar para os 'indecisos' de sábado.", dig: "Postar Motivacional" },
-            { day: "Terça", title: "Externo", main: "Visitar 1 empresa vizinha.", dig: "Vídeo Técnico" },
-            { day: "Quarta", title: "Vitrine", main: "Trocar destaque da vitrine.", dig: "Foco em Lentes" },
-            { day: "Quinta", title: "Ofertas", main: "Resgatar orçamentos antigos.", dig: "#TBT Cliente" },
-            { day: "Sexta", title: "Fechamento", main: "Confirmar agenda de Sábado.", dig: "Prep. Fim de Semana" },
-            { day: "Sábado", title: "Vendas", main: "Criar movimento e servir café.", dig: "Bastidores Loja" },
+            { day: "Segunda", title: "Planejamento", main: "Ligar para os 'indecisos' de sábado.", dig: "Story: Óculos ideal para Home Office/Trabalho" },
+            { day: "Terça", title: "Externo", main: "Visitar 1 empresa vizinha.", dig: "Reels: Mito ou Verdade sobre Lentes" },
+            { day: "Quarta", title: "Vitrine", main: "Trocar destaque da vitrine.", dig: "Foto: Detalhe de acabamento de uma peça premium" },
+            { day: "Quinta", title: "Ofertas", main: "Resgatar orçamentos antigos.", dig: "Enquete: 'Qual combina mais com você?' (2 opções)" },
+            { day: "Sexta", title: "Fechamento", main: "Confirmar agenda de Sábado.", dig: "Vídeo: Como limpar seus óculos corretamente" },
+            { day: "Sábado", title: "Vendas", main: "Criar movimento e servir café.", dig: "Story: Bastidores e clientes retirando óculos" },
         ];
 
         window.currentDayIndex = 0;
@@ -516,6 +515,7 @@
             const m = missions[dayIndex];
             document.getElementById('mission-title').innerText = m.title;
             document.getElementById('mission-main').innerText = m.main;
+            document.getElementById('mission-digital').innerText = m.dig;
             
             // Renderiza cronograma específico do dia
             renderTimeline(getDailySchedule(dayIndex));
