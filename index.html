@@ -1,9 +1,10 @@
 <!-- 
-    PAINEL DE CONSULTOR COM DICAS DIGITAIS RENOVADAS
+    PAINEL DE CONSULTOR COM ABA DE SCRIPTS DE VENDAS
     
-    Atualizações:
-    1. Dicas Digitais Recriadas: Ações específicas para cada dia (Reels, Enquetes, Fotos Técnicas).
-    2. Foco em Autoridade e Engajamento nas redes sociais.
+    Novidades:
+    1. Navegação por Abas: "Painel Diário" vs "Materiais de Apoio".
+    2. Biblioteca de Scripts: Todo o conteúdo de "50 Scripts para Vender Mais" organizado em categorias.
+    3. Funcionalidades Mantidas: Cronograma, Firebase, Excel e Gráficos.
 -->
 
 <!DOCTYPE html>
@@ -26,13 +27,9 @@
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js';
         import { getFirestore, doc, setDoc, getDoc } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
 
-        // -----------------------------------------------------------
-        // ÁREA DE CONFIGURAÇÃO - COLE SUAS CHAVES AQUI
-        // -----------------------------------------------------------
         const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'otica-training-v1';
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'otica-scripts-v1';
         
-        // Inicialização do Sistema
         let db, auth;
         let authReady = false;
         
@@ -71,23 +68,18 @@
             console.error("Erro Firebase:", e);
         }
 
-        // --- FUNÇÕES DE DADOS (HÍBRIDO: FIREBASE + LOCAL) ---
-        
+        // --- FUNÇÕES DE DADOS ---
         window.getDateKey = function(dayIndex) {
             const today = new Date();
             const dayDiff = dayIndex - (today.getDay() === 0 ? 6 : today.getDay() - 1);
             const targetDate = new Date(today);
             targetDate.setDate(today.getDate() + dayDiff);
-            return targetDate.toISOString().split('T')[0]; // YYYY-MM-DD
+            return targetDate.toISOString().split('T')[0];
         }
 
-        // SALVAR (Nuvem + Histórico Local)
         window.saveData = async function(dataObj) {
             if (!window.consultantName) return;
-
             const dateKey = window.getDateKey(window.currentDayIndex);
-            
-            // 1. Prepara dados completos
             const finalData = { 
                 ...dataObj, 
                 date: dateKey,
@@ -96,41 +88,29 @@
                 lastUpdated: new Date().toISOString()
             };
 
-            // 2. Salva no Banco Local (LocalStorage History)
             const historyKey = `history_${window.consultantName.replace(/\s+/g, '_').toLowerCase()}`;
             let localHistory = JSON.parse(localStorage.getItem(historyKey) || '{}');
-            
             localHistory[dateKey] = { ...localHistory[dateKey], ...finalData };
             localStorage.setItem(historyKey, JSON.stringify(localHistory));
 
-            // Feedback Visual
             const statusEl = document.getElementById('save-status');
             statusEl.classList.remove('opacity-0');
 
-            // 3. Tenta Salvar no Firebase (se online)
             if (db && authReady) {
                 const safeName = window.consultantName.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
                 const docId = `${safeName}_${dateKey}`;
                 const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'daily_reports', docId);
-                
-                try {
-                    await setDoc(docRef, finalData, { merge: true });
-                } catch (e) { console.error("Erro Nuvem (salvo local):", e); }
+                try { await setDoc(docRef, finalData, { merge: true }); } catch (e) { console.error(e); }
             }
-
             setTimeout(() => { statusEl.classList.add('opacity-0'); }, 2000);
         };
 
-        // CARREGAR (Local primeiro, depois Nuvem)
         window.fetchData = async function(dayIndex) {
             const dateKey = window.getDateKey(dayIndex);
-            
-            // 1. Tenta carregar do Histórico Local
             const historyKey = `history_${window.consultantName.replace(/\s+/g, '_').toLowerCase()}`;
             const localHistory = JSON.parse(localStorage.getItem(historyKey) || '{}');
             let data = localHistory[dateKey] || null;
 
-            // 2. Se não tem local, tenta Firebase
             if (!data && db && authReady) {
                 const safeName = window.consultantName.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
                 const docId = `${safeName}_${dateKey}`;
@@ -143,61 +123,38 @@
             return data;
         };
 
-        // --- LÓGICA DE EXPORTAÇÃO PARA EXCEL ---
         window.exportToExcel = function() {
             if (!window.consultantName) return;
-
             const historyKey = `history_${window.consultantName.replace(/\s+/g, '_').toLowerCase()}`;
             const localHistory = JSON.parse(localStorage.getItem(historyKey) || '{}');
             const records = Object.values(localHistory);
 
-            if (records.length === 0) {
-                alert("Ainda não há dados salvos para exportar.");
-                return;
-            }
+            if (records.length === 0) { alert("Sem dados para exportar."); return; }
 
-            // Formata os dados para o Excel (Colunas)
             const excelData = records.map(item => {
-                // Calcular conversão
                 const entries = parseInt(item.flowEntries) || 0;
                 const conv = parseInt(item.flowConversions) || 0;
                 const rate = entries > 0 ? ((conv / entries) * 100).toFixed(1) + '%' : '0%';
-
                 return {
-                    "Data": item.date,
-                    "Consultor": item.consultant,
-                    "Loja": item.store,
-                    "Vendas (R$)": item.sales || 0,
-                    "Meta (R$)": item.goal || 0,
-                    "Entraram (Pessoas)": entries,
-                    "Compraram (Qtd)": conv,
-                    "Taxa Conversão": rate,
-                    "Leads": item.leads || 0,
-                    "Agendamentos": item.appointments || 0,
-                    "Última Atualização": item.lastUpdated ? new Date(item.lastUpdated).toLocaleString() : ''
+                    "Data": item.date, "Consultor": item.consultant, "Loja": item.store,
+                    "Vendas (R$)": item.sales || 0, "Meta (R$)": item.goal || 0,
+                    "Entraram": entries, "Compraram": conv, "Conversão": rate,
+                    "Leads": item.leads || 0, "Agendamentos": item.appointments || 0
                 };
             });
 
-            // Cria a planilha
             const ws = XLSX.utils.json_to_sheet(excelData);
             const wb = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(wb, ws, "Relatório Geral");
-
-            // Gera o arquivo e baixa
-            XLSX.writeFile(wb, `Relatorio_${window.consultantName}_${new Date().toISOString().slice(0,10)}.xlsx`);
+            XLSX.utils.book_append_sheet(wb, ws, "Relatório");
+            XLSX.writeFile(wb, `Relatorio_${window.consultantName}.xlsx`);
+            
+            setTimeout(() => {
+                const driveLink = "https://drive.google.com/drive/folders/1CU0gUxp3smShCpgzABFQSzVCM__tLW0F?usp=drive_link";
+                if(confirm("Baixado! Abrir Google Drive para upload?")) window.open(driveLink, '_blank');
+            }, 1000);
         };
 
-        // --- INICIALIZAÇÃO DE VARIÁVEIS EXPOSTAS ---
-        window.db = db; 
-        window.auth = auth;
-
-        // Auto-preenchimento
-        document.addEventListener("DOMContentLoaded", () => {
-            const savedName = localStorage.getItem('optical_consultant_name');
-            const savedStore = localStorage.getItem('optical_store_name');
-            if(savedName) document.getElementById('access-name').value = savedName;
-            if(savedStore) document.getElementById('access-store').value = savedStore;
-        });
+        window.db = db; window.auth = auth;
     </script>
 
     <style>
@@ -208,6 +165,12 @@
         .checkbox-custom:checked::before { transform: scale(1); }
         .chart-container { position: relative; width: 100%; height: 220px; }
         .glass-panel { background: white; border: 1px solid #e5e7eb; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); }
+        
+        /* Estilos para a aba de Scripts */
+        details > summary { list-style: none; }
+        details > summary::-webkit-details-marker { display: none; }
+        details[open] summary ~ * { animation: sweep .3s ease-in-out; }
+        @keyframes sweep { 0% {opacity: 0; transform: translateY(-10px)} 100% {opacity: 1; transform: translateY(0)} }
     </style>
 </head>
 <body class="min-h-screen flex flex-col">
@@ -220,23 +183,17 @@
                 <h1 class="text-2xl font-bold text-gray-800">Painel do Consultor</h1>
                 <p class="text-sm text-gray-500">Alta Performance em Ótica</p>
             </div>
-            
             <form onsubmit="handleEnter(event)" class="space-y-4">
                 <div class="text-left">
                     <label class="block text-xs font-bold text-gray-600 uppercase mb-1 ml-1">Quem é você?</label>
-                    <input type="text" id="access-name" class="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none text-lg" placeholder="Seu Nome" required>
+                    <input type="text" id="access-name" class="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-yellow-500 focus:border-yellow-500 outline-none text-lg" placeholder="Seu Nome" required>
                 </div>
-
                 <div class="text-left">
                     <label class="block text-xs font-bold text-gray-600 uppercase mb-1 ml-1">Nome da Loja</label>
                     <input type="text" id="access-store" class="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-yellow-500 focus:border-yellow-500 outline-none text-lg" placeholder="Ex: Ótica Centro" required>
                 </div>
-
-                <button type="submit" class="w-full bg-teal-600 hover:bg-teal-700 text-white font-bold py-3 px-4 rounded-xl shadow-lg transition-transform hover:scale-[1.02] active:scale-95">
-                    Acessar Painel
-                </button>
+                <button type="submit" class="w-full bg-teal-600 hover:bg-teal-700 text-white font-bold py-3 px-4 rounded-xl shadow-lg transition-transform hover:scale-[1.02] active:scale-95">Acessar Painel</button>
             </form>
-            
             <p id="connection-status" class="mt-6 text-xs text-gray-500 font-medium bg-white/50 inline-block px-2 rounded">Verificando conexão...</p>
         </div>
     </div>
@@ -244,14 +201,12 @@
     <!-- TELA PRINCIPAL -->
     <div id="dashboard-view" class="hidden flex flex-col min-h-screen w-full">
         
-        <!-- Header -->
+        <!-- Navbar -->
         <header class="bg-white border-b border-gray-200 sticky top-0 z-40 shadow-sm">
             <div class="max-w-7xl mx-auto px-4 py-3">
                 <div class="flex flex-col md:flex-row justify-between items-center gap-4">
                     <div class="flex items-center gap-3 w-full md:w-auto">
-                        <div class="h-10 w-10 bg-teal-100 rounded-full flex items-center justify-center text-teal-700 font-bold text-xl">
-                            C
-                        </div>
+                        <div class="h-10 w-10 bg-teal-100 rounded-full flex items-center justify-center text-teal-700 font-bold text-xl">C</div>
                         <div class="flex-1">
                             <h1 class="text-lg font-bold text-gray-800 leading-tight"><span id="header-name">Consultor</span></h1>
                             <div class="flex items-center gap-2">
@@ -259,148 +214,262 @@
                                 <span id="save-status" class="text-xs font-bold text-green-600 opacity-0 transition-opacity">Salvo ✓</span>
                             </div>
                         </div>
-                        
-                        <!-- BOTÃO EXPORTAR -->
-                        <button onclick="exportToExcel()" class="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white text-xs font-bold py-2 px-3 rounded-lg shadow transition-colors">
-                            <span>📥</span> Baixar Relatório
-                        </button>
-
+                        <button onclick="exportToExcel()" class="hidden md:flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white text-xs font-bold py-2 px-3 rounded-lg shadow transition-colors"><span>📥</span> Excel</button>
                         <button onclick="logout()" class="md:hidden text-xs text-red-500 font-bold ml-2">Sair</button>
                     </div>
                     
-                    <div class="flex bg-gray-100 p-1 rounded-xl overflow-x-auto w-full md:w-auto scrollbar-hide">
-                        <button onclick="setDay(0)" class="day-btn flex-1 min-w-[3rem] px-3 py-2 rounded-lg text-sm font-medium transition-colors" data-day="0">Seg</button>
-                        <button onclick="setDay(1)" class="day-btn flex-1 min-w-[3rem] px-3 py-2 rounded-lg text-sm font-medium transition-colors" data-day="1">Ter</button>
-                        <button onclick="setDay(2)" class="day-btn flex-1 min-w-[3rem] px-3 py-2 rounded-lg text-sm font-medium transition-colors" data-day="2">Qua</button>
-                        <button onclick="setDay(3)" class="day-btn flex-1 min-w-[3rem] px-3 py-2 rounded-lg text-sm font-medium transition-colors" data-day="3">Qui</button>
-                        <button onclick="setDay(4)" class="day-btn flex-1 min-w-[3rem] px-3 py-2 rounded-lg text-sm font-medium transition-colors" data-day="4">Sex</button>
-                        <button onclick="setDay(5)" class="day-btn flex-1 min-w-[3rem] px-3 py-2 rounded-lg text-sm font-medium transition-colors" data-day="5">Sáb</button>
+                    <!-- Navegação de Abas -->
+                    <div class="flex bg-gray-100 p-1 rounded-xl w-full md:w-auto">
+                        <button onclick="switchTab('dashboard')" id="tab-dashboard" class="flex-1 px-4 py-2 rounded-lg text-sm font-bold bg-white shadow text-teal-700 transition-colors">Painel Diário</button>
+                        <button onclick="switchTab('materials')" id="tab-materials" class="flex-1 px-4 py-2 rounded-lg text-sm font-medium text-gray-500 hover:text-teal-700 transition-colors">Materiais & Scripts</button>
                     </div>
                 </div>
             </div>
         </header>
 
-        <main class="flex-grow max-w-7xl mx-auto px-4 py-6 w-full grid grid-cols-1 lg:grid-cols-12 gap-6">
-            
-            <!-- Coluna Esquerda -->
+        <!-- ABA DASHBOARD (Conteúdo Original) -->
+        <main id="view-dashboard" class="flex-grow max-w-7xl mx-auto px-4 py-6 w-full grid grid-cols-1 lg:grid-cols-12 gap-6">
+            <!-- Dia da Semana (Só aparece no dashboard) -->
+            <div class="lg:col-span-12 flex bg-white p-2 rounded-xl overflow-x-auto scrollbar-hide border border-gray-200 mb-2">
+                <button onclick="setDay(0)" class="day-btn flex-1 min-w-[3rem] px-3 py-2 rounded-lg text-sm font-medium transition-colors" data-day="0">Seg</button>
+                <button onclick="setDay(1)" class="day-btn flex-1 min-w-[3rem] px-3 py-2 rounded-lg text-sm font-medium transition-colors" data-day="1">Ter</button>
+                <button onclick="setDay(2)" class="day-btn flex-1 min-w-[3rem] px-3 py-2 rounded-lg text-sm font-medium transition-colors" data-day="2">Qua</button>
+                <button onclick="setDay(3)" class="day-btn flex-1 min-w-[3rem] px-3 py-2 rounded-lg text-sm font-medium transition-colors" data-day="3">Qui</button>
+                <button onclick="setDay(4)" class="day-btn flex-1 min-w-[3rem] px-3 py-2 rounded-lg text-sm font-medium transition-colors" data-day="4">Sex</button>
+                <button onclick="setDay(5)" class="day-btn flex-1 min-w-[3rem] px-3 py-2 rounded-lg text-sm font-medium transition-colors" data-day="5">Sáb</button>
+            </div>
+
+            <!-- Coluna Esquerda: Cronograma -->
             <div class="lg:col-span-7 flex flex-col gap-6 order-2 lg:order-1">
                 <div class="glass-panel p-5 rounded-xl border-l-4 border-teal-500">
                     <h2 class="text-lg font-bold text-gray-800">Cronograma Diário</h2>
                     <p class="text-sm text-gray-500">Siga o fluxo para bater a meta.</p>
                 </div>
-
-                <div class="relative pl-4" id="timeline-container">
-                    <!-- JS preenche aqui -->
-                </div>
+                <div class="relative pl-4" id="timeline-container"></div>
             </div>
 
-            <!-- Coluna Direita -->
+            <!-- Coluna Direita: Ferramentas -->
             <div class="lg:col-span-5 flex flex-col gap-6 order-1 lg:order-2">
-                
-                <!-- Resultados (Expandido com Fluxo) -->
+                <!-- Resultados -->
                 <div class="glass-panel p-6 rounded-xl">
                     <h3 class="text-gray-800 font-bold mb-4 flex justify-between items-center">
-                        Resultados e Fluxo
-                        <span class="text-xs font-normal text-gray-400 bg-gray-100 px-2 py-1 rounded">Auto-save</span>
+                        Resultados e Fluxo <span class="text-xs font-normal text-gray-400 bg-gray-100 px-2 py-1 rounded">Auto-save</span>
                     </h3>
-                    
                     <div class="grid grid-cols-2 gap-4 mb-4">
-                        <!-- Linha 1: Financeiro -->
                         <div class="col-span-2 sm:col-span-1">
                             <label class="text-xs text-gray-500 font-bold mb-1 block">Vendas (R$)</label>
-                            <input type="number" id="input-sales" class="w-full p-2 bg-gray-50 border border-gray-200 rounded-lg text-lg font-bold text-teal-700 focus:ring-2 focus:ring-teal-500 outline-none" placeholder="0" oninput="handleMetricChange()">
+                            <input type="number" id="input-sales" class="w-full p-2 bg-gray-50 border border-gray-200 rounded-lg text-lg font-bold text-teal-700 outline-none" placeholder="0" oninput="handleMetricChange()">
                         </div>
                         <div class="col-span-2 sm:col-span-1">
                             <label class="text-xs text-gray-500 font-bold mb-1 block">Meta (R$)</label>
-                            <input type="number" id="input-goal" class="w-full p-2 bg-gray-50 border border-gray-200 rounded-lg text-lg font-bold text-gray-700 focus:ring-2 focus:ring-teal-500 outline-none" value="2000" oninput="handleMetricChange()">
+                            <input type="number" id="input-goal" class="w-full p-2 bg-gray-50 border border-gray-200 rounded-lg text-lg font-bold text-gray-700 outline-none" value="2000" oninput="handleMetricChange()">
                         </div>
-
-                        <!-- Linha 2: FLUXO DE LOJA (Novo) -->
                         <div class="col-span-2 bg-teal-50 p-3 rounded-lg border border-teal-100">
                             <p class="text-xs font-bold text-teal-800 uppercase mb-2">Fluxo de Atendimento</p>
                             <div class="grid grid-cols-3 gap-3 items-end">
-                                <div>
-                                    <label class="text-[10px] text-gray-500 font-bold block">Entraram</label>
-                                    <input type="number" id="input-flow-entries" class="w-full p-1.5 bg-white border border-gray-300 rounded text-sm text-center font-semibold focus:ring-2 focus:ring-teal-500 outline-none" placeholder="0" oninput="handleMetricChange()">
-                                </div>
-                                <div>
-                                    <label class="text-[10px] text-gray-500 font-bold block">Compraram</label>
-                                    <input type="number" id="input-flow-conversions" class="w-full p-1.5 bg-white border border-gray-300 rounded text-sm text-center font-semibold focus:ring-2 focus:ring-teal-500 outline-none" placeholder="0" oninput="handleMetricChange()">
-                                </div>
-                                <div>
-                                    <label class="text-[10px] text-gray-500 font-bold block">Conversão</label>
-                                    <div id="conversion-display" class="w-full p-1.5 bg-teal-600 text-white rounded text-sm text-center font-bold">0%</div>
-                                </div>
+                                <div><label class="text-[10px] text-gray-500 font-bold block">Entraram</label><input type="number" id="input-flow-entries" class="w-full p-1.5 bg-white border border-gray-300 rounded text-sm text-center font-semibold outline-none" placeholder="0" oninput="handleMetricChange()"></div>
+                                <div><label class="text-[10px] text-gray-500 font-bold block">Compraram</label><input type="number" id="input-flow-conversions" class="w-full p-1.5 bg-white border border-gray-300 rounded text-sm text-center font-semibold outline-none" placeholder="0" oninput="handleMetricChange()"></div>
+                                <div><label class="text-[10px] text-gray-500 font-bold block">Conversão</label><div id="conversion-display" class="w-full p-1.5 bg-teal-600 text-white rounded text-sm text-center font-bold">0%</div></div>
                             </div>
                         </div>
-
-                        <!-- Linha 3: Outros -->
-                        <div>
-                            <label class="text-xs text-gray-500 font-bold mb-1 block">Leads</label>
-                            <input type="number" id="input-leads" class="w-full p-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 outline-none" placeholder="0" oninput="handleMetricChange()">
-                        </div>
-                        <div>
-                            <label class="text-xs text-gray-500 font-bold mb-1 block">Agendamentos</label>
-                            <input type="number" id="input-appointments" class="w-full p-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 outline-none" placeholder="0" oninput="handleMetricChange()">
-                        </div>
+                        <div><label class="text-xs text-gray-500 font-bold mb-1 block">Leads</label><input type="number" id="input-leads" class="w-full p-2 bg-gray-50 border border-gray-200 rounded-lg text-sm outline-none" placeholder="0" oninput="handleMetricChange()"></div>
+                        <div><label class="text-xs text-gray-500 font-bold mb-1 block">Agendamentos</label><input type="number" id="input-appointments" class="w-full p-2 bg-gray-50 border border-gray-200 rounded-lg text-sm outline-none" placeholder="0" oninput="handleMetricChange()"></div>
                     </div>
-
-                    <div class="chart-container">
-                        <canvas id="performanceChart"></canvas>
-                    </div>
+                    <div class="chart-container"><canvas id="performanceChart"></canvas></div>
                 </div>
 
-                <!-- Missão do Dia (Movida para baixo) -->
+                <!-- Missão do Dia -->
                 <div class="glass-panel p-6 rounded-xl relative overflow-hidden group">
                     <div class="absolute top-0 right-0 w-24 h-24 bg-teal-50 rounded-bl-full -mr-4 -mt-4 transition-transform group-hover:scale-110"></div>
                     <h3 class="text-gray-500 text-xs font-bold uppercase tracking-wider mb-1">Foco de Hoje</h3>
                     <h2 id="mission-title" class="text-2xl font-bold text-teal-700 mb-4">...</h2>
-                    
                     <div class="space-y-3 relative z-10">
-                        <div class="flex items-start gap-3 p-3 bg-gray-50 rounded-lg">
-                            <span class="text-xl">🎯</span>
-                            <div>
-                                <p class="text-xs font-bold text-gray-600 uppercase">Ação Principal</p>
-                                <p id="mission-main" class="text-sm text-gray-800 font-medium">Carregando...</p>
-                            </div>
-                        </div>
-                        <div class="flex items-start gap-3 p-3 bg-gray-50 rounded-lg">
-                            <span class="text-xl">💡</span>
-                            <div>
-                                <p class="text-xs font-bold text-gray-600 uppercase">Dica Digital</p>
-                                <p id="mission-digital" class="text-sm text-gray-800">Carregando...</p>
-                            </div>
-                        </div>
+                        <div class="flex items-start gap-3 p-3 bg-gray-50 rounded-lg"><span class="text-xl">🎯</span><div><p class="text-xs font-bold text-gray-600 uppercase">Ação Principal</p><p id="mission-main" class="text-sm text-gray-800 font-medium">Carregando...</p></div></div>
+                        <div class="flex items-start gap-3 p-3 bg-gray-50 rounded-lg"><span class="text-xl">💡</span><div><p class="text-xs font-bold text-gray-600 uppercase">Dica Digital</p><p id="mission-digital" class="text-sm text-gray-800">Carregando...</p></div></div>
                     </div>
                 </div>
+            </div>
+        </main>
 
-                <div class="glass-panel p-4 rounded-xl">
-                    <details class="group">
-                        <summary class="flex justify-between items-center font-medium cursor-pointer list-none text-sm text-gray-700">
-                            <span>📞 Script: Resgate (1 ano)</span>
-                            <span class="transition group-open:rotate-180">▼</span>
+        <!-- ABA MATERIAIS (Novo Conteúdo) -->
+        <main id="view-materials" class="hidden flex-grow max-w-4xl mx-auto px-4 py-6 w-full">
+            <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                <div class="p-6 bg-teal-50 border-b border-teal-100">
+                    <h2 class="text-2xl font-bold text-teal-800">📚 Scripts para Vender Mais</h2>
+                    <p class="text-teal-600 mt-1">Materiais de apoio para contorno de objeções, abertura e fechamento.</p>
+                </div>
+                
+                <div class="divide-y divide-gray-100">
+                    <!-- Categoria: Primeiro Contato -->
+                    <details class="group p-4 open:bg-gray-50 transition-all cursor-pointer">
+                        <summary class="flex justify-between items-center font-bold text-gray-700">
+                            <span>👋 Primeiro Contato: Como Proceder?</span>
+                            <span class="text-teal-500 group-open:rotate-180 transition-transform">▼</span>
                         </summary>
-                        <div class="text-gray-600 mt-3 text-sm italic bg-yellow-50 p-3 rounded border border-yellow-100">
-                            "Olá [Nome], vi que faz um ano dos seus óculos. Como está a adaptação? Estamos com a agenda aberta para uma revisão gratuita..."
+                        <div class="mt-4 text-sm text-gray-600 space-y-4 pl-4 border-l-2 border-teal-300">
+                            <div>
+                                <strong class="block text-gray-800 mb-1">Apresentação e Descoberta</strong>
+                                <p>"[Nome do Cliente], meu nome é [Seu Nome], da [Sua Empresa]. Descobri que você tem interesse em [Área] e pensei que seria uma ótima oportunidade para apresentar nossas soluções. Posso te ligar em um momento conveniente?"</p>
+                            </div>
+                            <div>
+                                <strong class="block text-gray-800 mb-1">Oferta Específica</strong>
+                                <p>"Prezado(a) [Nome], estamos lançando um novo produto alinhado com suas necessidades recentes em [Interesse]. Gostaria de agendar um breve encontro virtual?"</p>
+                            </div>
+                            <div>
+                                <strong class="block text-gray-800 mb-1">Curto e Direto</strong>
+                                <p>"Oi [Nome], vi que mostrou interesse em [Produto]. Em apenas 2 minutos, posso te mostrar como podemos ajudar você? Quando seria um bom momento?"</p>
+                            </div>
+                        </div>
+                    </details>
+
+                    <!-- Categoria: Reativar Cliente (Preço) -->
+                    <details class="group p-4 open:bg-gray-50 transition-all cursor-pointer">
+                        <summary class="flex justify-between items-center font-bold text-gray-700">
+                            <span>💰 Reativar quem sumiu após ver Preço</span>
+                            <span class="text-teal-500 group-open:rotate-180 transition-transform">▼</span>
+                        </summary>
+                        <div class="mt-4 text-sm text-gray-600 space-y-4 pl-4 border-l-2 border-teal-300">
+                            <p class="italic bg-yellow-50 p-2 rounded">Não dê apenas o preço, mostre o valor.</p>
+                            <div>
+                                <strong class="block text-gray-800 mb-1">Lembrete Amigável</strong>
+                                <p>"Olá, [Nome]! Notei que mostrou interesse há algum tempo. Estou passando para ver se posso ajudar com mais informações ou responder a alguma dúvida."</p>
+                            </div>
+                            <div>
+                                <strong class="block text-gray-800 mb-1">Diferencial Claro</strong>
+                                <p>"Olá [Nome], notei que perguntou sobre o preço. Nosso produto oferece [Benefício Específico] que garante maior durabilidade. Posso explicar como isso gera economia a longo prazo?"</p>
+                            </div>
+                            <div>
+                                <strong class="block text-gray-800 mb-1">Escassez</strong>
+                                <p>"Olá [Nome], percebi seu interesse. Quero informar que restam apenas [X] unidades disponíveis. Se ainda tiver interesse, sugiro garantir o seu."</p>
+                            </div>
+                        </div>
+                    </details>
+
+                    <!-- Categoria: Várias Tentativas -->
+                    <details class="group p-4 open:bg-gray-50 transition-all cursor-pointer">
+                        <summary class="flex justify-between items-center font-bold text-gray-700">
+                            <span>📞 Várias Tentativas sem Sucesso</span>
+                            <span class="text-teal-500 group-open:rotate-180 transition-transform">▼</span>
+                        </summary>
+                        <div class="mt-4 text-sm text-gray-600 space-y-4 pl-4 border-l-2 border-teal-300">
+                            <div>
+                                <strong class="block text-gray-800 mb-1">Empatia e Valor</strong>
+                                <p>"Olá, [Nome]. Imagino que esteja ocupado. Percebemos que [Produto] pode fazer a diferença para você em [Benefício]. Se houver um momento oportuno, por favor nos informe."</p>
+                            </div>
+                            <div>
+                                <strong class="block text-gray-800 mb-1">Última Tentativa (Break-up)</strong>
+                                <p>"[Nome], esta será minha última mensagem. Não queria que perdesse a oferta válida até [Data]. Caso contrário, não vou incomodá-lo novamente. Obrigado!"</p>
+                            </div>
+                        </div>
+                    </details>
+
+                    <!-- Categoria: Identificação de Necessidades -->
+                    <details class="group p-4 open:bg-gray-50 transition-all cursor-pointer">
+                        <summary class="flex justify-between items-center font-bold text-gray-700">
+                            <span>🔍 Identificação de Necessidades</span>
+                            <span class="text-teal-500 group-open:rotate-180 transition-transform">▼</span>
+                        </summary>
+                        <div class="mt-4 text-sm text-gray-600 space-y-4 pl-4 border-l-2 border-teal-300">
+                            <p>"Para fornecer a solução mais eficaz, poderia me dar uma descrição mais detalhada das suas necessidades?"</p>
+                            <p>"Você poderia nos contar mais sobre as dificuldades que está enfrentando atualmente?"</p>
+                            <p>"Quais são suas principais prioridades neste momento ao escolher um óculos?"</p>
+                        </div>
+                    </details>
+
+                    <!-- Categoria: Objeção "Achei Caro" -->
+                    <details class="group p-4 open:bg-gray-50 transition-all cursor-pointer">
+                        <summary class="flex justify-between items-center font-bold text-gray-700">
+                            <span>💸 Lidando com "Achei Caro"</span>
+                            <span class="text-teal-500 group-open:rotate-180 transition-transform">▼</span>
+                        </summary>
+                        <div class="mt-4 text-sm text-gray-600 space-y-4 pl-4 border-l-2 border-teal-300">
+                            <div>
+                                <strong class="block text-gray-800 mb-1">Reforce o Valor</strong>
+                                <p>"Entendo sua preocupação. No entanto, nosso produto oferece [Benefício], o que traz [Resultado]. É um investimento em qualidade de visão."</p>
+                            </div>
+                            <div>
+                                <strong class="block text-gray-800 mb-1">Compare com Alternativas</strong>
+                                <p>"Existem opções variadas, mas o que nos diferencia é a garantia e a tecnologia da lente, que evitam dores de cabeça futuras."</p>
+                            </div>
+                            <div>
+                                <strong class="block text-gray-800 mb-1">Teste de Orçamento Real</strong>
+                                <p>"Este produto custa X. Este valor está totalmente fora do orçamento ou podemos negociar uma forma de pagamento que caiba no seu bolso?"</p>
+                            </div>
+                        </div>
+                    </details>
+
+                    <!-- Categoria: Fechamento -->
+                    <details class="group p-4 open:bg-gray-50 transition-all cursor-pointer">
+                        <summary class="flex justify-between items-center font-bold text-gray-700">
+                            <span>🤝 Fechamento de Venda</span>
+                            <span class="text-teal-500 group-open:rotate-180 transition-transform">▼</span>
+                        </summary>
+                        <div class="mt-4 text-sm text-gray-600 space-y-4 pl-4 border-l-2 border-teal-300">
+                            <p class="font-bold text-teal-700">Frases para Fechar:</p>
+                            <ul class="list-disc pl-5 space-y-1">
+                                <li>"Vamos começar?"</li>
+                                <li>"Qual forma de pagamento prefere usar?"</li>
+                                <li>"Podemos agendar a entrega?"</li>
+                                <li>"Ficou alguma dúvida ou podemos oficializar?"</li>
+                                <li>"Está pronto para investir no seu conforto visual?"</li>
+                            </ul>
+                        </div>
+                    </details>
+
+                    <!-- Categoria: Pós-Venda -->
+                    <details class="group p-4 open:bg-gray-50 transition-all cursor-pointer">
+                        <summary class="flex justify-between items-center font-bold text-gray-700">
+                            <span>🎁 Pós-Venda e Fidelização</span>
+                            <span class="text-teal-500 group-open:rotate-180 transition-transform">▼</span>
+                        </summary>
+                        <div class="mt-4 text-sm text-gray-600 space-y-4 pl-4 border-l-2 border-teal-300">
+                            <div>
+                                <strong class="block text-gray-800 mb-1">Agradecimento</strong>
+                                <p>"Olá [Nome]! Queremos expressar nossa gratidão por escolher nossa ótica. Sua confiança significa muito. Estamos aqui para qualquer ajuste que precise!"</p>
+                            </div>
+                            <div>
+                                <strong class="block text-gray-800 mb-1">Dica de Uso</strong>
+                                <p>"Obrigado pela compra! Lembre-se: para limpar suas lentes, use apenas o spray e a flanela que fornecemos para evitar riscos. Aproveite sua nova visão!"</p>
+                            </div>
+                            <div>
+                                <strong class="block text-gray-800 mb-1">Desconto de Aniversário</strong>
+                                <p>"Feliz Aniversário! Para celebrar, queremos oferecer 20% de desconto em qualquer item na sua semana."</p>
+                            </div>
                         </div>
                     </details>
                 </div>
-
             </div>
         </main>
     </div>
 
-    <!-- LÓGICA DE ENTRADA -->
+    <!-- LÓGICA DE NAVEGAÇÃO -->
     <script>
+        function switchTab(tabName) {
+            // Esconde todas as abas
+            document.getElementById('view-dashboard').classList.add('hidden');
+            document.getElementById('view-materials').classList.add('hidden');
+            
+            // Remove destaque dos botões
+            document.getElementById('tab-dashboard').className = "flex-1 px-4 py-2 rounded-lg text-sm font-medium text-gray-500 hover:text-teal-700 transition-colors";
+            document.getElementById('tab-materials').className = "flex-1 px-4 py-2 rounded-lg text-sm font-medium text-gray-500 hover:text-teal-700 transition-colors";
+
+            // Ativa a aba selecionada
+            if(tabName === 'dashboard') {
+                document.getElementById('view-dashboard').classList.remove('hidden');
+                document.getElementById('tab-dashboard').className = "flex-1 px-4 py-2 rounded-lg text-sm font-bold bg-white shadow text-teal-700 transition-colors";
+            } else {
+                document.getElementById('view-materials').classList.remove('hidden');
+                document.getElementById('tab-materials').className = "flex-1 px-4 py-2 rounded-lg text-sm font-bold bg-white shadow text-teal-700 transition-colors";
+            }
+        }
+
+        // --- LÓGICA DE ENTRADA ---
         window.handleEnter = async function(e) {
             e.preventDefault();
             const nameInput = document.getElementById('access-name').value.trim();
             const storeInput = document.getElementById('access-store').value.trim();
 
-            if (!nameInput || !storeInput) {
-                alert("Por favor, preencha seu nome e o nome da loja.");
-                return;
-            }
+            if (!nameInput || !storeInput) { alert("Preencha nome e loja."); return; }
 
             window.consultantName = nameInput;
             window.storeName = storeInput;
@@ -421,11 +490,8 @@
                 location.reload();
             }
         };
-    </script>
 
-    <!-- LÓGICA DE DADOS E UI -->
-    <script>
-        // TÓPICOS DE TREINAMENTO (1 POR DIA DA SEMANA)
+        // --- LÓGICA DE DADOS (CRONOGRAMA) ---
         const trainingTopics = [
             { title: "Abertura da Venda", task: "Técnica de Abordagem Não-Invasiva", desc: "Ler script de saudação e praticar sorriso." },
             { title: "Sondagem", task: "Perguntas Abertas vs Fechadas", desc: "Listar 3 perguntas para descobrir a dor do cliente." },
@@ -435,13 +501,10 @@
             { title: "Fechamento", task: "Técnicas de Fechamento (Ou/Ou)", desc: "Treinar o fechamento experimental." }
         ];
 
-        // FUNÇÃO PARA GERAR AGENDA DINÂMICA
         function getDailySchedule(dayIndex) {
-            const topic = trainingTopics[dayIndex % 6]; // Garante que não quebre se for Domingo (6)
-            
+            const topic = trainingTopics[dayIndex % 6]; 
             return [
                 { time: "08:00 - 09:00", title: "Organização", tasks: ["Limpeza vitrines", "Conferir OS", "Definir Meta"] },
-                // NOVO BLOCO DE TREINAMENTO (1 HORA)
                 { time: "09:00 - 10:00", title: `Treinamento: ${topic.title}`, isTraining: true, tasks: [topic.task, topic.desc, "Roleplay rápido (15 min)"] },
                 { time: "10:00 - 11:00", title: "Digital", tasks: ["Postar Stories", "Responder Directs"] },
                 { time: "11:00 - 12:00", title: "CRM", tasks: ["Ligar Clientes", "Aniversariantes"] },
@@ -464,9 +527,14 @@
         window.currentDayIndex = 0;
 
         document.addEventListener('DOMContentLoaded', () => {
-            // Renderiza com o dia atual (Segunda por padrão = 0)
             renderTimeline(getDailySchedule(0));
             initChart();
+            
+            // Auto-login
+            const savedName = localStorage.getItem('optical_consultant_name');
+            const savedStore = localStorage.getItem('optical_store_name');
+            if(savedName) document.getElementById('access-name').value = savedName;
+            if(savedStore) document.getElementById('access-store').value = savedStore;
         });
 
         function renderTimeline(scheduleData) {
@@ -476,7 +544,6 @@
             scheduleData.forEach((block, idx) => {
                 const isBreak = block.isBreak ? 'bg-gray-100 opacity-70' : 'bg-white';
                 const isTraining = block.isTraining ? 'border-l-4 border-indigo-500 bg-indigo-50' : 'border-gray-200';
-                
                 let iconColor = block.isTraining ? 'bg-indigo-500' : 'bg-teal-500';
                 
                 let html = `
@@ -498,9 +565,7 @@
                         </li>`;
                     });
                     html += `</ul>`;
-                } else if (block.isBreak) {
-                    html += `<p class="text-xs text-gray-400 italic">Pausa para recarregar.</p>`;
-                }
+                } else if (block.isBreak) { html += `<p class="text-xs text-gray-400 italic">Pausa para recarregar.</p>`; }
                 html += `</div></div>`;
                 container.insertAdjacentHTML('beforeend', html);
             });
@@ -516,10 +581,7 @@
             document.getElementById('mission-title').innerText = m.title;
             document.getElementById('mission-main').innerText = m.main;
             document.getElementById('mission-digital').innerText = m.dig;
-            
-            // Renderiza cronograma específico do dia
             renderTimeline(getDailySchedule(dayIndex));
-            
             await window.loadDayData(dayIndex);
         };
 
@@ -539,7 +601,6 @@
                 if(data.flowEntries) document.getElementById('input-flow-entries').value = data.flowEntries;
                 if(data.flowConversions) document.getElementById('input-flow-conversions').value = data.flowConversions;
                 
-                // Recalcular conversão visual
                 const ent = parseInt(data.flowEntries) || 0;
                 const conv = parseInt(data.flowConversions) || 0;
                 if(ent > 0) document.getElementById('conversion-display').innerText = ((conv/ent)*100).toFixed(1) + "%";
@@ -565,7 +626,6 @@
 
         let debounceTimer;
         window.handleMetricChange = function() {
-            // Atualizar cálculo de conversão
             const entries = parseInt(document.getElementById('input-flow-entries').value) || 0;
             const conversions = parseInt(document.getElementById('input-flow-conversions').value) || 0;
             const rate = entries > 0 ? ((conversions / entries) * 100).toFixed(1) : 0;
@@ -604,10 +664,7 @@
                     responsive: true,
                     maintainAspectRatio: false,
                     plugins: { legend: { display: false } },
-                    scales: {
-                        y: { beginAtZero: true, grid: { color: '#f3f4f6' } },
-                        x: { grid: { display: false } }
-                    }
+                    scales: { y: { beginAtZero: true, grid: { color: '#f3f4f6' } }, x: { grid: { display: false } } }
                 }
             });
         }
