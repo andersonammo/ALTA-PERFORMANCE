@@ -1,10 +1,9 @@
 <!-- 
-    PAINEL DE CONSULTOR COM ABA DE SCRIPTS DE VENDAS
+    PAINEL DE CONSULTOR - BOTÃO DE RELATÓRIO VISÍVEL
     
-    Novidades:
-    1. Navegação por Abas: "Painel Diário" vs "Materiais de Apoio".
-    2. Biblioteca de Scripts: Todo o conteúdo de "50 Scripts para Vender Mais" organizado em categorias.
-    3. Funcionalidades Mantidas: Cronograma, Firebase, Excel e Gráficos.
+    Correção:
+    1. Botão "Excel" agora visível em todos os dispositivos (Mobile e Desktop).
+    2. Mantida a lógica de redirecionamento para o Google Drive após baixar.
 -->
 
 <!DOCTYPE html>
@@ -214,7 +213,8 @@
                                 <span id="save-status" class="text-xs font-bold text-green-600 opacity-0 transition-opacity">Salvo ✓</span>
                             </div>
                         </div>
-                        <button onclick="exportToExcel()" class="hidden md:flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white text-xs font-bold py-2 px-3 rounded-lg shadow transition-colors"><span>📥</span> Excel</button>
+                        <!-- BOTÃO EXCEL VISÍVEL -->
+                        <button onclick="exportToExcel()" class="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white text-xs font-bold py-2 px-3 rounded-lg shadow transition-colors"><span>📥</span> Excel</button>
                         <button onclick="logout()" class="md:hidden text-xs text-red-500 font-bold ml-2">Sair</button>
                     </div>
                     
@@ -295,7 +295,7 @@
         <main id="view-materials" class="hidden flex-grow max-w-4xl mx-auto px-4 py-6 w-full">
             <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
                 <div class="p-6 bg-teal-50 border-b border-teal-100">
-                    <h2 class="text-2xl font-bold text-teal-800">📚 Scripts para Vender Mais</h2>
+                    <h2 class="text-2xl font-bold text-teal-800">📚 50 Scripts para Vender Mais</h2>
                     <p class="text-teal-600 mt-1">Materiais de apoio para contorno de objeções, abertura e fechamento.</p>
                 </div>
                 
@@ -433,7 +433,7 @@
                             </div>
                             <div>
                                 <strong class="block text-gray-800 mb-1">Desconto de Aniversário</strong>
-                                <p>"Feliz Aniversário! Para celebrar, queremos oferecer 20% de desconto em qualquer item na sua semana."</p>
+                                <p>"Feliz Aniversário! Para celebrar, queremos oferecer 25% de desconto em qualquer item na sua semana."</p>
                             </div>
                         </div>
                     </details>
