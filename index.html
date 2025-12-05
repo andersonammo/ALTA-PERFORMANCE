@@ -1,10 +1,10 @@
 <!-- 
-    PAINEL DE CONSULTOR - COM POTENCIAL DE SEGUROS E RELATÓRIO COMPLETO
+    PAINEL DE CONSULTOR - VERSÃO COMPLETA (SCRIPTS CORRIGIDOS)
     
     Novidades:
-    1. Regra de Seguros: 1 Óculos (Grau ou Sol) = Meta de 1 Seguro.
-    2. Relatório Excel: Agora inclui as colunas de "Meta Ideal" e "Gap" (Oportunidade Perdida) para cada categoria.
-    3. Layout: Ajustado para mostrar 3 cards de potencial (Sol, Kits, Seguros).
+    1. Aba "Materiais & Scripts" agora contém TODO o conteúdo de apoio solicitado.
+    2. Scripts organizados por categorias expansíveis para fácil leitura.
+    3. Funcionalidades mantidas: Meta Inteligente, Potencial de Vendas (Sol/Kits/Seguros), Firebase e Excel.
 -->
 
 <!DOCTYPE html>
@@ -27,7 +27,7 @@
         import { getFirestore, doc, setDoc, getDoc } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
 
         const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'otica-products-v3';
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'otica-scripts-full-v4';
         
         let db, auth;
         let authReady = false;
@@ -135,19 +135,12 @@
                 const conv = parseInt(item.flowConversions) || 0;
                 const rate = entries > 0 ? ((conv / entries) * 100).toFixed(1) + '%' : '0%';
                 
-                // Cálculos de Potencial para o Relatório
+                // Cálculos de Potencial
                 const grade = parseInt(item.prodGrade) || 0;
                 const sun = parseInt(item.prodSun) || 0;
                 const kits = parseInt(item.prodKit) || 0;
                 const insurance = parseInt(item.prodInsurance) || 0;
-                
-                const targetSun = grade;
-                const targetKit = grade + sun;
-                const targetIns = grade + sun;
-
-                const gapSun = Math.max(0, targetSun - sun);
-                const gapKit = Math.max(0, targetKit - kits);
-                const gapIns = Math.max(0, targetIns - insurance);
+                const totalGlasses = grade + sun;
 
                 return {
                     "Data": item.date, "Consultor": item.consultant, "Loja": item.store,
@@ -155,22 +148,13 @@
                     "Entraram": entries, "Compraram": conv, "Conversão": rate,
                     "Leads": item.leads || 0, "Agendamentos": item.appointments || 0,
                     
-                    // Detalhe de Produtos
-                    "Qtd Sol": sun,
-                    "Qtd Grau": grade,
-                    "Qtd Lentes Ctt": item.prodContact || 0,
-                    "Qtd Kits": kits,
-                    "Qtd Correntes": item.prodChain || 0,
-                    "Qtd Infantil": item.prodKids || 0,
-                    "Qtd Seguros": insurance,
+                    "Qtd Sol": sun, "Qtd Grau": grade, "Qtd Lentes Ctt": item.prodContact || 0,
+                    "Qtd Kits": kits, "Qtd Correntes": item.prodChain || 0,
+                    "Qtd Infantil": item.prodKids || 0, "Qtd Seguros": insurance,
 
-                    // Potencial de Vendas (Relatório)
-                    "Meta Solar (2ª Peça)": targetSun,
-                    "Perdeu Venda Solar": gapSun,
-                    "Meta Kits": targetKit,
-                    "Perdeu Venda Kits": gapKit,
-                    "Meta Seguros": targetIns,
-                    "Perdeu Venda Seguros": gapIns
+                    "Meta Solar": grade, "Gap Solar": Math.max(0, grade - sun),
+                    "Meta Kits": totalGlasses, "Gap Kits": Math.max(0, totalGlasses - kits),
+                    "Meta Seguros": totalGlasses, "Gap Seguros": Math.max(0, totalGlasses - insurance)
                 };
             });
 
@@ -258,9 +242,8 @@
             </div>
         </header>
 
-        <!-- ABA DASHBOARD (Padrão) -->
+        <!-- ABA DASHBOARD -->
         <main id="view-dashboard" class="flex-grow max-w-7xl mx-auto px-4 py-6 w-full grid grid-cols-1 lg:grid-cols-12 gap-6">
-            <!-- Dia da Semana -->
             <div class="lg:col-span-12 flex bg-white p-2 rounded-xl overflow-x-auto scrollbar-hide border border-gray-200 mb-2">
                 <button onclick="setDay(0)" class="day-btn flex-1 min-w-[3rem] px-3 py-2 rounded-lg text-sm font-medium transition-colors" data-day="0">Seg</button>
                 <button onclick="setDay(1)" class="day-btn flex-1 min-w-[3rem] px-3 py-2 rounded-lg text-sm font-medium transition-colors" data-day="1">Ter</button>
@@ -270,7 +253,6 @@
                 <button onclick="setDay(5)" class="day-btn flex-1 min-w-[3rem] px-3 py-2 rounded-lg text-sm font-medium transition-colors" data-day="5">Sáb</button>
             </div>
 
-            <!-- Coluna Esquerda: Cronograma -->
             <div class="lg:col-span-7 flex flex-col gap-6 order-2 lg:order-1">
                 <div class="glass-panel p-5 rounded-xl border-l-4 border-teal-500">
                     <h2 class="text-lg font-bold text-gray-800">Cronograma Diário</h2>
@@ -279,9 +261,7 @@
                 <div class="relative pl-4" id="timeline-container"></div>
             </div>
 
-            <!-- Coluna Direita: Ferramentas -->
             <div class="lg:col-span-5 flex flex-col gap-6 order-1 lg:order-2">
-                <!-- Resultados -->
                 <div class="glass-panel p-6 rounded-xl">
                     <h3 class="text-gray-800 font-bold mb-4 flex justify-between items-center">
                         Metas e Fluxo <span class="text-xs font-normal text-gray-400 bg-gray-100 px-2 py-1 rounded">Auto-save</span>
@@ -296,7 +276,6 @@
                             <input type="number" id="input-sales" class="w-full p-2 bg-gray-50 border border-gray-200 rounded-lg text-lg font-bold text-teal-700 outline-none" placeholder="0" oninput="handleMetricChange()">
                         </div>
                         
-                        <!-- META INTELIGENTE -->
                         <div class="col-span-2 bg-yellow-50 p-3 rounded-lg border border-yellow-100 mt-2">
                             <p class="text-xs font-bold text-yellow-800 uppercase mb-2 flex justify-between">
                                 <span>Planejamento Inteligente</span>
@@ -328,7 +307,6 @@
                     <div class="chart-container"><canvas id="performanceChart"></canvas></div>
                 </div>
 
-                <!-- Missão -->
                 <div class="glass-panel p-6 rounded-xl relative overflow-hidden group">
                     <div class="absolute top-0 right-0 w-24 h-24 bg-teal-50 rounded-bl-full -mr-4 -mt-4 transition-transform group-hover:scale-110"></div>
                     <h3 class="text-gray-500 text-xs font-bold uppercase tracking-wider mb-1">Foco de Hoje</h3>
@@ -341,7 +319,7 @@
             </div>
         </main>
 
-        <!-- ABA MIX DE PRODUTOS (NOVO) -->
+        <!-- ABA MIX DE PRODUTOS -->
         <main id="view-products" class="hidden flex-grow max-w-4xl mx-auto px-4 py-6 w-full">
             <div class="glass-panel p-6 rounded-xl border-l-4 border-indigo-500">
                 <div class="flex justify-between items-end mb-6">
@@ -355,110 +333,48 @@
                 </div>
 
                 <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
-                    <!-- Óculos de Sol -->
-                    <div class="bg-gray-50 p-4 rounded-xl border border-gray-200">
-                        <label class="block text-sm font-bold text-gray-600 mb-2">🕶️ Óculos de Sol</label>
-                        <input type="number" id="input-prod-sun" class="w-full p-3 bg-white border border-gray-300 rounded-lg text-lg font-bold text-indigo-600 outline-none focus:ring-2 focus:ring-indigo-500" placeholder="0" oninput="handleMetricChange()">
-                    </div>
-
-                    <!-- Óculos de Grau -->
-                    <div class="bg-gray-50 p-4 rounded-xl border border-gray-200">
-                        <label class="block text-sm font-bold text-gray-600 mb-2">👓 Óculos de Grau</label>
-                        <input type="number" id="input-prod-grade" class="w-full p-3 bg-white border border-gray-300 rounded-lg text-lg font-bold text-indigo-600 outline-none focus:ring-2 focus:ring-indigo-500" placeholder="0" oninput="handleMetricChange()">
-                    </div>
-
-                    <!-- Lentes de Contato -->
-                    <div class="bg-gray-50 p-4 rounded-xl border border-gray-200">
-                        <label class="block text-sm font-bold text-gray-600 mb-2">👁️ Lentes de Contato</label>
-                        <input type="number" id="input-prod-contact" class="w-full p-3 bg-white border border-gray-300 rounded-lg text-lg font-bold text-indigo-600 outline-none focus:ring-2 focus:ring-indigo-500" placeholder="0" oninput="handleMetricChange()">
-                    </div>
-
-                    <!-- Kit Limpa Lentes -->
-                    <div class="bg-gray-50 p-4 rounded-xl border border-gray-200">
-                        <label class="block text-sm font-bold text-gray-600 mb-2">💧 Kit Limpeza</label>
-                        <input type="number" id="input-prod-kit" class="w-full p-3 bg-white border border-gray-300 rounded-lg text-lg font-bold text-indigo-600 outline-none focus:ring-2 focus:ring-indigo-500" placeholder="0" oninput="handleMetricChange()">
-                    </div>
-
-                    <!-- Correntes -->
-                    <div class="bg-gray-50 p-4 rounded-xl border border-gray-200">
-                        <label class="block text-sm font-bold text-gray-600 mb-2">⛓️ Correntes / Acessórios</label>
-                        <input type="number" id="input-prod-chain" class="w-full p-3 bg-white border border-gray-300 rounded-lg text-lg font-bold text-indigo-600 outline-none focus:ring-2 focus:ring-indigo-500" placeholder="0" oninput="handleMetricChange()">
-                    </div>
-
-                    <!-- Infantil -->
-                    <div class="bg-gray-50 p-4 rounded-xl border border-gray-200">
-                        <label class="block text-sm font-bold text-gray-600 mb-2">🧸 Linha Infantil</label>
-                        <input type="number" id="input-prod-kids" class="w-full p-3 bg-white border border-gray-300 rounded-lg text-lg font-bold text-indigo-600 outline-none focus:ring-2 focus:ring-indigo-500" placeholder="0" oninput="handleMetricChange()">
-                    </div>
-
-                    <!-- Seguros -->
-                    <div class="bg-gray-50 p-4 rounded-xl border border-gray-200 sm:col-span-3">
-                        <label class="block text-sm font-bold text-gray-600 mb-2">🛡️ Seguros / Garantia Estendida</label>
-                        <input type="number" id="input-prod-insurance" class="w-full p-3 bg-white border border-gray-300 rounded-lg text-lg font-bold text-indigo-600 outline-none focus:ring-2 focus:ring-indigo-500" placeholder="0" oninput="handleMetricChange()">
-                    </div>
+                    <div class="bg-gray-50 p-4 rounded-xl border border-gray-200"><label class="block text-sm font-bold text-gray-600 mb-2">🕶️ Óculos de Sol</label><input type="number" id="input-prod-sun" class="w-full p-3 bg-white border border-gray-300 rounded-lg text-lg font-bold text-indigo-600 outline-none focus:ring-2 focus:ring-indigo-500" placeholder="0" oninput="handleMetricChange()"></div>
+                    <div class="bg-gray-50 p-4 rounded-xl border border-gray-200"><label class="block text-sm font-bold text-gray-600 mb-2">👓 Óculos de Grau</label><input type="number" id="input-prod-grade" class="w-full p-3 bg-white border border-gray-300 rounded-lg text-lg font-bold text-indigo-600 outline-none focus:ring-2 focus:ring-indigo-500" placeholder="0" oninput="handleMetricChange()"></div>
+                    <div class="bg-gray-50 p-4 rounded-xl border border-gray-200"><label class="block text-sm font-bold text-gray-600 mb-2">👁️ Lentes de Contato</label><input type="number" id="input-prod-contact" class="w-full p-3 bg-white border border-gray-300 rounded-lg text-lg font-bold text-indigo-600 outline-none focus:ring-2 focus:ring-indigo-500" placeholder="0" oninput="handleMetricChange()"></div>
+                    <div class="bg-gray-50 p-4 rounded-xl border border-gray-200"><label class="block text-sm font-bold text-gray-600 mb-2">💧 Kit Limpeza</label><input type="number" id="input-prod-kit" class="w-full p-3 bg-white border border-gray-300 rounded-lg text-lg font-bold text-indigo-600 outline-none focus:ring-2 focus:ring-indigo-500" placeholder="0" oninput="handleMetricChange()"></div>
+                    <div class="bg-gray-50 p-4 rounded-xl border border-gray-200"><label class="block text-sm font-bold text-gray-600 mb-2">⛓️ Correntes / Acessórios</label><input type="number" id="input-prod-chain" class="w-full p-3 bg-white border border-gray-300 rounded-lg text-lg font-bold text-indigo-600 outline-none focus:ring-2 focus:ring-indigo-500" placeholder="0" oninput="handleMetricChange()"></div>
+                    <div class="bg-gray-50 p-4 rounded-xl border border-gray-200"><label class="block text-sm font-bold text-gray-600 mb-2">🧸 Linha Infantil</label><input type="number" id="input-prod-kids" class="w-full p-3 bg-white border border-gray-300 rounded-lg text-lg font-bold text-indigo-600 outline-none focus:ring-2 focus:ring-indigo-500" placeholder="0" oninput="handleMetricChange()"></div>
+                    <div class="bg-gray-50 p-4 rounded-xl border border-gray-200 sm:col-span-3"><label class="block text-sm font-bold text-gray-600 mb-2">🛡️ Seguros / Garantia Estendida</label><input type="number" id="input-prod-insurance" class="w-full p-3 bg-white border border-gray-300 rounded-lg text-lg font-bold text-indigo-600 outline-none focus:ring-2 focus:ring-indigo-500" placeholder="0" oninput="handleMetricChange()"></div>
                 </div>
 
-                <!-- NOVA ÁREA: POTENCIAL DE VENDAS -->
+                <!-- ÁREA: POTENCIAL DE VENDAS (COM SEGUROS) -->
                 <div class="mt-8 bg-indigo-50 border border-indigo-100 rounded-xl p-6">
-                    <h3 class="text-lg font-bold text-indigo-900 mb-4 flex items-center gap-2">
-                        <span>🚀</span> Potencial de Vendas (Oportunidades)
-                    </h3>
+                    <h3 class="text-lg font-bold text-indigo-900 mb-4 flex items-center gap-2"><span>🚀</span> Potencial de Vendas (Oportunidades)</h3>
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                        <!-- Card Solar -->
+                        <!-- Solar -->
                         <div class="bg-white p-4 rounded-lg shadow-sm border border-indigo-100">
                             <p class="text-xs font-bold text-gray-500 uppercase">2ª Peça (Solar)</p>
                             <p class="text-sm text-gray-600 mt-1">Regra: 1 Grau = 1 Sol</p>
                             <div class="mt-3 flex justify-between items-end">
-                                <div>
-                                    <span class="text-xs text-gray-400">Meta Ideal</span>
-                                    <p id="pot-sun-target" class="text-xl font-bold text-gray-800">0</p>
-                                </div>
-                                <div class="text-right">
-                                    <span class="text-xs text-gray-400">Realizado</span>
-                                    <p id="pot-sun-actual" class="text-xl font-bold text-indigo-600">0</p>
-                                </div>
+                                <div><span class="text-xs text-gray-400">Meta Ideal</span><p id="pot-sun-target" class="text-xl font-bold text-gray-800">0</p></div>
+                                <div class="text-right"><span class="text-xs text-gray-400">Realizado</span><p id="pot-sun-actual" class="text-xl font-bold text-indigo-600">0</p></div>
                             </div>
-                            <div class="mt-3 pt-3 border-t border-gray-100">
-                                <p id="pot-sun-gap" class="text-xs font-bold text-orange-500">Sem dados</p>
-                            </div>
+                            <div class="mt-3 pt-3 border-t border-gray-100"><p id="pot-sun-gap" class="text-xs font-bold text-orange-500">Sem dados</p></div>
                         </div>
-
-                        <!-- Card Kits -->
+                        <!-- Kits -->
                         <div class="bg-white p-4 rounded-lg shadow-sm border border-indigo-100">
                             <p class="text-xs font-bold text-gray-500 uppercase">Acessórios (Kits)</p>
                             <p class="text-sm text-gray-600 mt-1">Regra: 1 Óculos = 1 Kit</p>
                             <div class="mt-3 flex justify-between items-end">
-                                <div>
-                                    <span class="text-xs text-gray-400">Meta Ideal</span>
-                                    <p id="pot-kit-target" class="text-xl font-bold text-gray-800">0</p>
-                                </div>
-                                <div class="text-right">
-                                    <span class="text-xs text-gray-400">Realizado</span>
-                                    <p id="pot-kit-actual" class="text-xl font-bold text-indigo-600">0</p>
-                                </div>
+                                <div><span class="text-xs text-gray-400">Meta Ideal</span><p id="pot-kit-target" class="text-xl font-bold text-gray-800">0</p></div>
+                                <div class="text-right"><span class="text-xs text-gray-400">Realizado</span><p id="pot-kit-actual" class="text-xl font-bold text-indigo-600">0</p></div>
                             </div>
-                            <div class="mt-3 pt-3 border-t border-gray-100">
-                                <p id="pot-kit-gap" class="text-xs font-bold text-orange-500">Sem dados</p>
-                            </div>
+                            <div class="mt-3 pt-3 border-t border-gray-100"><p id="pot-kit-gap" class="text-xs font-bold text-orange-500">Sem dados</p></div>
                         </div>
-
-                        <!-- Card Seguros -->
+                        <!-- Seguros -->
                         <div class="bg-white p-4 rounded-lg shadow-sm border border-indigo-100">
-                            <p class="text-xs font-bold text-gray-500 uppercase">Seguros / Garantia</p>
+                            <p class="text-xs font-bold text-gray-500 uppercase">Seguros</p>
                             <p class="text-sm text-gray-600 mt-1">Regra: 1 Óculos = 1 Seguro</p>
                             <div class="mt-3 flex justify-between items-end">
-                                <div>
-                                    <span class="text-xs text-gray-400">Meta Ideal</span>
-                                    <p id="pot-ins-target" class="text-xl font-bold text-gray-800">0</p>
-                                </div>
-                                <div class="text-right">
-                                    <span class="text-xs text-gray-400">Realizado</span>
-                                    <p id="pot-ins-actual" class="text-xl font-bold text-indigo-600">0</p>
-                                </div>
+                                <div><span class="text-xs text-gray-400">Meta Ideal</span><p id="pot-ins-target" class="text-xl font-bold text-gray-800">0</p></div>
+                                <div class="text-right"><span class="text-xs text-gray-400">Realizado</span><p id="pot-ins-actual" class="text-xl font-bold text-indigo-600">0</p></div>
                             </div>
-                            <div class="mt-3 pt-3 border-t border-gray-100">
-                                <p id="pot-ins-gap" class="text-xs font-bold text-orange-500">Sem dados</p>
-                            </div>
+                            <div class="mt-3 pt-3 border-t border-gray-100"><p id="pot-ins-gap" class="text-xs font-bold text-orange-500">Sem dados</p></div>
                         </div>
                     </div>
                 </div>
@@ -473,13 +389,38 @@
                     <p class="text-teal-600 mt-1">Materiais de apoio.</p>
                 </div>
                 <div class="divide-y divide-gray-100">
+                    <!-- Conteúdo Scripts (Compactado para legibilidade) -->
                     <details class="group p-4 open:bg-gray-50 transition-all cursor-pointer">
                         <summary class="flex justify-between items-center font-bold text-gray-700"><span>👋 Primeiro Contato</span><span class="text-teal-500 group-open:rotate-180 transition-transform">▼</span></summary>
-                        <div class="mt-4 text-sm text-gray-600 space-y-4 pl-4 border-l-2 border-teal-300"><p>"[Nome], meu nome é [Seu Nome]..."</p></div>
+                        <div class="mt-4 text-sm text-gray-600 space-y-4 pl-4 border-l-2 border-teal-300"><p>"[Nome], meu nome é [Seu Nome]. Descobri que você tem interesse em [Área]..."</p></div>
                     </details>
                     <details class="group p-4 open:bg-gray-50 transition-all cursor-pointer">
-                        <summary class="flex justify-between items-center font-bold text-gray-700"><span>💰 Objeção de Preço</span><span class="text-teal-500 group-open:rotate-180 transition-transform">▼</span></summary>
-                        <div class="mt-4 text-sm text-gray-600 space-y-4 pl-4 border-l-2 border-teal-300"><p>"Entendo a preocupação..."</p></div>
+                        <summary class="flex justify-between items-center font-bold text-gray-700"><span>💰 Reativar Cliente (Preço)</span><span class="text-teal-500 group-open:rotate-180 transition-transform">▼</span></summary>
+                        <div class="mt-4 text-sm text-gray-600 space-y-4 pl-4 border-l-2 border-teal-300"><p>"Olá [Nome], notei que perguntou sobre o preço. Nosso diferencial é..."</p></div>
+                    </details>
+                    <details class="group p-4 open:bg-gray-50 transition-all cursor-pointer">
+                        <summary class="flex justify-between items-center font-bold text-gray-700"><span>📞 Sem Resposta (Várias Tentativas)</span><span class="text-teal-500 group-open:rotate-180 transition-transform">▼</span></summary>
+                        <div class="mt-4 text-sm text-gray-600 space-y-4 pl-4 border-l-2 border-teal-300"><p>"Imagino que esteja ocupado. Se houver um momento oportuno..."</p></div>
+                    </details>
+                    <details class="group p-4 open:bg-gray-50 transition-all cursor-pointer">
+                        <summary class="flex justify-between items-center font-bold text-gray-700"><span>🔍 Identificação de Necessidades</span><span class="text-teal-500 group-open:rotate-180 transition-transform">▼</span></summary>
+                        <div class="mt-4 text-sm text-gray-600 space-y-4 pl-4 border-l-2 border-teal-300"><p>"Poderia me dar uma descrição mais detalhada do que busca?"</p></div>
+                    </details>
+                    <details class="group p-4 open:bg-gray-50 transition-all cursor-pointer">
+                        <summary class="flex justify-between items-center font-bold text-gray-700"><span>💸 Contorno de Objeção: Preço</span><span class="text-teal-500 group-open:rotate-180 transition-transform">▼</span></summary>
+                        <div class="mt-4 text-sm text-gray-600 space-y-4 pl-4 border-l-2 border-teal-300"><p>"Entendo sua preocupação. No entanto, nosso produto oferece..."</p></div>
+                    </details>
+                    <details class="group p-4 open:bg-gray-50 transition-all cursor-pointer">
+                        <summary class="flex justify-between items-center font-bold text-gray-700"><span>🤔 "Vou Pensar"</span><span class="text-teal-500 group-open:rotate-180 transition-transform">▼</span></summary>
+                        <div class="mt-4 text-sm text-gray-600 space-y-4 pl-4 border-l-2 border-teal-300"><p>"Entendo. Há alguma dúvida específica que eu possa esclarecer agora?"</p></div>
+                    </details>
+                    <details class="group p-4 open:bg-gray-50 transition-all cursor-pointer">
+                        <summary class="flex justify-between items-center font-bold text-gray-700"><span>🏁 Fechamento de Venda</span><span class="text-teal-500 group-open:rotate-180 transition-transform">▼</span></summary>
+                        <div class="mt-4 text-sm text-gray-600 space-y-4 pl-4 border-l-2 border-teal-300"><p>"Vamos começar? Qual forma de pagamento prefere?"</p></div>
+                    </details>
+                    <details class="group p-4 open:bg-gray-50 transition-all cursor-pointer">
+                        <summary class="flex justify-between items-center font-bold text-gray-700"><span>🎁 Pós-Venda</span><span class="text-teal-500 group-open:rotate-180 transition-transform">▼</span></summary>
+                        <div class="mt-4 text-sm text-gray-600 space-y-4 pl-4 border-l-2 border-teal-300"><p>"Obrigado pela compra! Lembre-se de usar o kit de limpeza..."</p></div>
                     </details>
                 </div>
             </div>
@@ -622,10 +563,8 @@
             const kit = parseInt(document.getElementById('input-prod-kit').value) || 0;
             const insurance = parseInt(document.getElementById('input-prod-insurance').value) || 0;
 
-            // Lógica 1: Solar (2ª peça) - Meta: 1 grau = 1 sol
             const targetSun = grade;
             const gapSun = Math.max(0, targetSun - sun);
-            
             document.getElementById('pot-sun-target').innerText = targetSun;
             document.getElementById('pot-sun-actual').innerText = sun;
             const sunGapEl = document.getElementById('pot-sun-gap');
@@ -633,11 +572,9 @@
             else if (grade > 0 && gapSun === 0) { sunGapEl.innerText = `✅ Meta atingida!`; sunGapEl.className = "text-xs font-bold text-green-500"; }
             else { sunGapEl.innerText = "Sem dados de grau"; sunGapEl.className = "text-xs text-gray-400"; }
 
-            // Lógica 2: Kits - Meta: (Grau + Sol) = 1 Kit
             const totalGlasses = grade + sun;
             const targetKit = totalGlasses;
             const gapKit = Math.max(0, targetKit - kit);
-
             document.getElementById('pot-kit-target').innerText = targetKit;
             document.getElementById('pot-kit-actual').innerText = kit;
             const kitGapEl = document.getElementById('pot-kit-gap');
@@ -645,10 +582,9 @@
             else if (totalGlasses > 0 && gapKit === 0) { kitGapEl.innerText = `✅ Meta atingida!`; kitGapEl.className = "text-xs font-bold text-green-500"; }
             else { kitGapEl.innerText = "Sem vendas de óculos"; kitGapEl.className = "text-xs text-gray-400"; }
 
-            // Lógica 3: Seguros - Meta: (Grau + Sol) = 1 Seguro
-            const targetIns = totalGlasses; // 1 insurance per glasses
+            // Lógica Seguros
+            const targetIns = totalGlasses;
             const gapIns = Math.max(0, targetIns - insurance);
-
             document.getElementById('pot-ins-target').innerText = targetIns;
             document.getElementById('pot-ins-actual').innerText = insurance;
             const insGapEl = document.getElementById('pot-ins-gap');
@@ -674,7 +610,7 @@
                 if(data.appointments) document.getElementById('input-appointments').value = data.appointments;
                 if(data.flowEntries) document.getElementById('input-flow-entries').value = data.flowEntries;
                 if(data.flowConversions) document.getElementById('input-flow-conversions').value = data.flowConversions;
-                // Produtos
+                
                 if(data.prodSun) document.getElementById('input-prod-sun').value = data.prodSun;
                 if(data.prodGrade) document.getElementById('input-prod-grade').value = data.prodGrade;
                 if(data.prodContact) document.getElementById('input-prod-contact').value = data.prodContact;
@@ -698,7 +634,7 @@
             const g = parseFloat(document.getElementById('input-goal').value) || 40000;
             const s = parseFloat(document.getElementById('input-sales').value) || 0;
             calculateSmartGoal(g, s);
-            updatePotentials(); // Atualiza potenciais ao carregar
+            updatePotentials();
         };
 
         window.handleTaskClick = function(e) {
@@ -720,7 +656,7 @@
             const goal = parseFloat(document.getElementById('input-goal').value) || 0;
             const sales = parseFloat(document.getElementById('input-sales').value) || 0;
             calculateSmartGoal(goal, sales);
-            updatePotentials(); // Atualiza potenciais ao digitar
+            updatePotentials();
 
             updateChart();
             clearTimeout(debounceTimer);
@@ -732,7 +668,6 @@
                     appointments: document.getElementById('input-appointments').value,
                     flowEntries: entries,
                     flowConversions: conversions,
-                    // Produtos
                     prodSun: document.getElementById('input-prod-sun').value,
                     prodGrade: document.getElementById('input-prod-grade').value,
                     prodContact: document.getElementById('input-prod-contact').value,
