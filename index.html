@@ -1,0 +1,624 @@
+<!-- 
+    PAINEL DE CONSULTOR COM ROTINA DE TREINAMENTO DIÁRIO
+    
+    Atualizações:
+    1. Novo Bloco de Treinamento (09:00 - 10:00).
+    2. Tópicos específicos para cada dia da semana (Abertura, Sondagem, CVBA, etc.).
+    3. Reorganização dos horários para manter o dia produtivo.
+-->
+
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Painel de Consultor: Alta Performance</title>
+    
+    <!-- Bibliotecas Visuais e Lógicas -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Biblioteca para gerar Excel -->
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Firebase SDKs -->
+    <script type="module">
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js';
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js';
+        import { getFirestore, doc, setDoc, getDoc } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
+
+        // -----------------------------------------------------------
+        // ÁREA DE CONFIGURAÇÃO - COLE SUAS CHAVES AQUI
+        // -----------------------------------------------------------
+        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'otica-training-v1';
+        
+        // Inicialização do Sistema
+        let db, auth;
+        let authReady = false;
+        
+        try {
+            if (!firebaseConfig.apiKey && Object.keys(firebaseConfig).length === 0) {
+                console.warn("Modo Local Ativo (Firebase não configurado).");
+                authReady = true;
+            } else {
+                const app = initializeApp(firebaseConfig);
+                auth = getAuth(app);
+                db = getFirestore(app);
+                
+                const initAuth = async () => {
+                    try {
+                        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                            await signInWithCustomToken(auth, __initial_auth_token);
+                        } else {
+                            await signInAnonymously(auth);
+                        }
+                    } catch (error) {
+                        console.error("Auth Error:", error);
+                        if (!auth.currentUser) await signInAnonymously(auth);
+                    }
+                };
+                initAuth();
+
+                onAuthStateChanged(auth, (user) => {
+                    if (user) {
+                        authReady = true;
+                        document.getElementById('connection-status').innerText = "Nuvem + Local Ativos";
+                        document.getElementById('connection-status').className = "mt-6 text-xs text-green-200 font-bold bg-green-800/20 py-1 px-3 rounded-full inline-block";
+                    }
+                });
+            }
+        } catch (e) {
+            console.error("Erro Firebase:", e);
+        }
+
+        // --- FUNÇÕES DE DADOS (HÍBRIDO: FIREBASE + LOCAL) ---
+        
+        window.getDateKey = function(dayIndex) {
+            const today = new Date();
+            const dayDiff = dayIndex - (today.getDay() === 0 ? 6 : today.getDay() - 1);
+            const targetDate = new Date(today);
+            targetDate.setDate(today.getDate() + dayDiff);
+            return targetDate.toISOString().split('T')[0]; // YYYY-MM-DD
+        }
+
+        // SALVAR (Nuvem + Histórico Local)
+        window.saveData = async function(dataObj) {
+            if (!window.consultantName) return;
+
+            const dateKey = window.getDateKey(window.currentDayIndex);
+            
+            // 1. Prepara dados completos
+            const finalData = { 
+                ...dataObj, 
+                date: dateKey,
+                store: window.storeName,
+                consultant: window.consultantName,
+                lastUpdated: new Date().toISOString()
+            };
+
+            // 2. Salva no Banco Local (LocalStorage History)
+            const historyKey = `history_${window.consultantName.replace(/\s+/g, '_').toLowerCase()}`;
+            let localHistory = JSON.parse(localStorage.getItem(historyKey) || '{}');
+            
+            localHistory[dateKey] = { ...localHistory[dateKey], ...finalData };
+            localStorage.setItem(historyKey, JSON.stringify(localHistory));
+
+            // Feedback Visual
+            const statusEl = document.getElementById('save-status');
+            statusEl.classList.remove('opacity-0');
+
+            // 3. Tenta Salvar no Firebase (se online)
+            if (db && authReady) {
+                const safeName = window.consultantName.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
+                const docId = `${safeName}_${dateKey}`;
+                const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'daily_reports', docId);
+                
+                try {
+                    await setDoc(docRef, finalData, { merge: true });
+                } catch (e) { console.error("Erro Nuvem (salvo local):", e); }
+            }
+
+            setTimeout(() => { statusEl.classList.add('opacity-0'); }, 2000);
+        };
+
+        // CARREGAR (Local primeiro, depois Nuvem)
+        window.fetchData = async function(dayIndex) {
+            const dateKey = window.getDateKey(dayIndex);
+            
+            // 1. Tenta carregar do Histórico Local
+            const historyKey = `history_${window.consultantName.replace(/\s+/g, '_').toLowerCase()}`;
+            const localHistory = JSON.parse(localStorage.getItem(historyKey) || '{}');
+            let data = localHistory[dateKey] || null;
+
+            // 2. Se não tem local, tenta Firebase
+            if (!data && db && authReady) {
+                const safeName = window.consultantName.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
+                const docId = `${safeName}_${dateKey}`;
+                const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'daily_reports', docId);
+                try {
+                    const docSnap = await getDoc(docRef);
+                    if (docSnap.exists()) data = docSnap.data();
+                } catch (e) { console.error(e); }
+            }
+            return data;
+        };
+
+        // --- LÓGICA DE EXPORTAÇÃO PARA EXCEL ---
+        window.exportToExcel = function() {
+            if (!window.consultantName) return;
+
+            const historyKey = `history_${window.consultantName.replace(/\s+/g, '_').toLowerCase()}`;
+            const localHistory = JSON.parse(localStorage.getItem(historyKey) || '{}');
+            const records = Object.values(localHistory);
+
+            if (records.length === 0) {
+                alert("Ainda não há dados salvos para exportar.");
+                return;
+            }
+
+            // Formata os dados para o Excel (Colunas)
+            const excelData = records.map(item => {
+                // Calcular conversão
+                const entries = parseInt(item.flowEntries) || 0;
+                const conv = parseInt(item.flowConversions) || 0;
+                const rate = entries > 0 ? ((conv / entries) * 100).toFixed(1) + '%' : '0%';
+
+                return {
+                    "Data": item.date,
+                    "Consultor": item.consultant,
+                    "Loja": item.store,
+                    "Vendas (R$)": item.sales || 0,
+                    "Meta (R$)": item.goal || 0,
+                    "Entraram (Pessoas)": entries,
+                    "Compraram (Qtd)": conv,
+                    "Taxa Conversão": rate,
+                    "Leads": item.leads || 0,
+                    "Agendamentos": item.appointments || 0,
+                    "Última Atualização": item.lastUpdated ? new Date(item.lastUpdated).toLocaleString() : ''
+                };
+            });
+
+            // Cria a planilha
+            const ws = XLSX.utils.json_to_sheet(excelData);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "Relatório Geral");
+
+            // Gera o arquivo e baixa
+            XLSX.writeFile(wb, `Relatorio_${window.consultantName}_${new Date().toISOString().slice(0,10)}.xlsx`);
+        };
+
+        // --- INICIALIZAÇÃO DE VARIÁVEIS EXPOSTAS ---
+        window.db = db; 
+        window.auth = auth;
+
+        // Auto-preenchimento
+        document.addEventListener("DOMContentLoaded", () => {
+            const savedName = localStorage.getItem('optical_consultant_name');
+            const savedStore = localStorage.getItem('optical_store_name');
+            if(savedName) document.getElementById('access-name').value = savedName;
+            if(savedStore) document.getElementById('access-store').value = savedStore;
+        });
+    </script>
+
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; color: #1f2937; }
+        .timeline-line { position: absolute; left: 1.25rem; top: 0; bottom: 0; width: 2px; background-color: #e5e7eb; z-index: 0; }
+        .checkbox-custom { appearance: none; width: 1.2em; height: 1.2em; border: 2px solid #0d9488; border-radius: 4px; display: inline-grid; place-content: center; cursor: pointer; }
+        .checkbox-custom::before { content: ""; width: 0.65em; height: 0.65em; transform: scale(0); transition: 120ms transform ease-in-out; box-shadow: inset 1em 1em #0d9488; transform-origin: center; clip-path: polygon(14% 44%, 0 65%, 50% 100%, 100% 16%, 80% 0%, 43% 62%); }
+        .checkbox-custom:checked::before { transform: scale(1); }
+        .chart-container { position: relative; width: 100%; height: 220px; }
+        .glass-panel { background: white; border: 1px solid #e5e7eb; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col">
+
+    <!-- TELA DE ENTRADA -->
+    <div id="login-view" class="fixed inset-0 z-50 flex items-center justify-center bg-yellow-500 px-4">
+        <div class="bg-white p-8 rounded-2xl shadow-2xl max-w-sm w-full text-center">
+            <div class="mb-6">
+                <span class="text-5xl block mb-2">👓</span>
+                <h1 class="text-2xl font-bold text-gray-800">Painel do Consultor</h1>
+                <p class="text-sm text-gray-500">Alta Performance em Ótica</p>
+            </div>
+            
+            <form onsubmit="handleEnter(event)" class="space-y-4">
+                <div class="text-left">
+                    <label class="block text-xs font-bold text-gray-600 uppercase mb-1 ml-1">Quem é você?</label>
+                    <input type="text" id="access-name" class="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none text-lg" placeholder="Seu Nome" required>
+                </div>
+
+                <div class="text-left">
+                    <label class="block text-xs font-bold text-gray-600 uppercase mb-1 ml-1">Nome da Loja</label>
+                    <input type="text" id="access-store" class="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-yellow-500 focus:border-yellow-500 outline-none text-lg" placeholder="Ex: Ótica Centro" required>
+                </div>
+
+                <button type="submit" class="w-full bg-teal-600 hover:bg-teal-700 text-white font-bold py-3 px-4 rounded-xl shadow-lg transition-transform hover:scale-[1.02] active:scale-95">
+                    Acessar Painel
+                </button>
+            </form>
+            
+            <p id="connection-status" class="mt-6 text-xs text-gray-500 font-medium bg-white/50 inline-block px-2 rounded">Verificando conexão...</p>
+        </div>
+    </div>
+
+    <!-- TELA PRINCIPAL -->
+    <div id="dashboard-view" class="hidden flex flex-col min-h-screen w-full">
+        
+        <!-- Header -->
+        <header class="bg-white border-b border-gray-200 sticky top-0 z-40 shadow-sm">
+            <div class="max-w-7xl mx-auto px-4 py-3">
+                <div class="flex flex-col md:flex-row justify-between items-center gap-4">
+                    <div class="flex items-center gap-3 w-full md:w-auto">
+                        <div class="h-10 w-10 bg-teal-100 rounded-full flex items-center justify-center text-teal-700 font-bold text-xl">
+                            C
+                        </div>
+                        <div class="flex-1">
+                            <h1 class="text-lg font-bold text-gray-800 leading-tight"><span id="header-name">Consultor</span></h1>
+                            <div class="flex items-center gap-2">
+                                <span class="text-xs text-gray-500">Área de Trabalho</span>
+                                <span id="save-status" class="text-xs font-bold text-green-600 opacity-0 transition-opacity">Salvo ✓</span>
+                            </div>
+                        </div>
+                        
+                        <!-- BOTÃO EXPORTAR -->
+                        <button onclick="exportToExcel()" class="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white text-xs font-bold py-2 px-3 rounded-lg shadow transition-colors">
+                            <span>📥</span> Baixar Relatório
+                        </button>
+
+                        <button onclick="logout()" class="md:hidden text-xs text-red-500 font-bold ml-2">Sair</button>
+                    </div>
+                    
+                    <div class="flex bg-gray-100 p-1 rounded-xl overflow-x-auto w-full md:w-auto scrollbar-hide">
+                        <button onclick="setDay(0)" class="day-btn flex-1 min-w-[3rem] px-3 py-2 rounded-lg text-sm font-medium transition-colors" data-day="0">Seg</button>
+                        <button onclick="setDay(1)" class="day-btn flex-1 min-w-[3rem] px-3 py-2 rounded-lg text-sm font-medium transition-colors" data-day="1">Ter</button>
+                        <button onclick="setDay(2)" class="day-btn flex-1 min-w-[3rem] px-3 py-2 rounded-lg text-sm font-medium transition-colors" data-day="2">Qua</button>
+                        <button onclick="setDay(3)" class="day-btn flex-1 min-w-[3rem] px-3 py-2 rounded-lg text-sm font-medium transition-colors" data-day="3">Qui</button>
+                        <button onclick="setDay(4)" class="day-btn flex-1 min-w-[3rem] px-3 py-2 rounded-lg text-sm font-medium transition-colors" data-day="4">Sex</button>
+                        <button onclick="setDay(5)" class="day-btn flex-1 min-w-[3rem] px-3 py-2 rounded-lg text-sm font-medium transition-colors" data-day="5">Sáb</button>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <main class="flex-grow max-w-7xl mx-auto px-4 py-6 w-full grid grid-cols-1 lg:grid-cols-12 gap-6">
+            
+            <!-- Coluna Esquerda -->
+            <div class="lg:col-span-7 flex flex-col gap-6 order-2 lg:order-1">
+                <div class="glass-panel p-5 rounded-xl border-l-4 border-teal-500">
+                    <h2 class="text-lg font-bold text-gray-800">Cronograma Diário</h2>
+                    <p class="text-sm text-gray-500">Siga o fluxo para bater a meta.</p>
+                </div>
+
+                <div class="relative pl-4" id="timeline-container">
+                    <!-- JS preenche aqui -->
+                </div>
+            </div>
+
+            <!-- Coluna Direita -->
+            <div class="lg:col-span-5 flex flex-col gap-6 order-1 lg:order-2">
+                
+                <!-- Resultados (Expandido com Fluxo) -->
+                <div class="glass-panel p-6 rounded-xl">
+                    <h3 class="text-gray-800 font-bold mb-4 flex justify-between items-center">
+                        Resultados e Fluxo
+                        <span class="text-xs font-normal text-gray-400 bg-gray-100 px-2 py-1 rounded">Auto-save</span>
+                    </h3>
+                    
+                    <div class="grid grid-cols-2 gap-4 mb-4">
+                        <!-- Linha 1: Financeiro -->
+                        <div class="col-span-2 sm:col-span-1">
+                            <label class="text-xs text-gray-500 font-bold mb-1 block">Vendas (R$)</label>
+                            <input type="number" id="input-sales" class="w-full p-2 bg-gray-50 border border-gray-200 rounded-lg text-lg font-bold text-teal-700 focus:ring-2 focus:ring-teal-500 outline-none" placeholder="0" oninput="handleMetricChange()">
+                        </div>
+                        <div class="col-span-2 sm:col-span-1">
+                            <label class="text-xs text-gray-500 font-bold mb-1 block">Meta (R$)</label>
+                            <input type="number" id="input-goal" class="w-full p-2 bg-gray-50 border border-gray-200 rounded-lg text-lg font-bold text-gray-700 focus:ring-2 focus:ring-teal-500 outline-none" value="2000" oninput="handleMetricChange()">
+                        </div>
+
+                        <!-- Linha 2: FLUXO DE LOJA (Novo) -->
+                        <div class="col-span-2 bg-teal-50 p-3 rounded-lg border border-teal-100">
+                            <p class="text-xs font-bold text-teal-800 uppercase mb-2">Fluxo de Atendimento</p>
+                            <div class="grid grid-cols-3 gap-3 items-end">
+                                <div>
+                                    <label class="text-[10px] text-gray-500 font-bold block">Entraram</label>
+                                    <input type="number" id="input-flow-entries" class="w-full p-1.5 bg-white border border-gray-300 rounded text-sm text-center font-semibold focus:ring-2 focus:ring-teal-500 outline-none" placeholder="0" oninput="handleMetricChange()">
+                                </div>
+                                <div>
+                                    <label class="text-[10px] text-gray-500 font-bold block">Compraram</label>
+                                    <input type="number" id="input-flow-conversions" class="w-full p-1.5 bg-white border border-gray-300 rounded text-sm text-center font-semibold focus:ring-2 focus:ring-teal-500 outline-none" placeholder="0" oninput="handleMetricChange()">
+                                </div>
+                                <div>
+                                    <label class="text-[10px] text-gray-500 font-bold block">Conversão</label>
+                                    <div id="conversion-display" class="w-full p-1.5 bg-teal-600 text-white rounded text-sm text-center font-bold">0%</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Linha 3: Outros -->
+                        <div>
+                            <label class="text-xs text-gray-500 font-bold mb-1 block">Leads</label>
+                            <input type="number" id="input-leads" class="w-full p-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 outline-none" placeholder="0" oninput="handleMetricChange()">
+                        </div>
+                        <div>
+                            <label class="text-xs text-gray-500 font-bold mb-1 block">Agendamentos</label>
+                            <input type="number" id="input-appointments" class="w-full p-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 outline-none" placeholder="0" oninput="handleMetricChange()">
+                        </div>
+                    </div>
+
+                    <div class="chart-container">
+                        <canvas id="performanceChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- Missão do Dia (Movida para baixo) -->
+                <div class="glass-panel p-6 rounded-xl relative overflow-hidden group">
+                    <div class="absolute top-0 right-0 w-24 h-24 bg-teal-50 rounded-bl-full -mr-4 -mt-4 transition-transform group-hover:scale-110"></div>
+                    <h3 class="text-gray-500 text-xs font-bold uppercase tracking-wider mb-1">Foco de Hoje</h3>
+                    <h2 id="mission-title" class="text-2xl font-bold text-teal-700 mb-4">...</h2>
+                    
+                    <div class="space-y-3 relative z-10">
+                        <div class="flex items-start gap-3 p-3 bg-gray-50 rounded-lg">
+                            <span class="text-xl">🎯</span>
+                            <div>
+                                <p class="text-xs font-bold text-gray-600 uppercase">Ação Principal</p>
+                                <p id="mission-main" class="text-sm text-gray-800 font-medium">Carregando...</p>
+                            </div>
+                        </div>
+                        <div class="flex items-start gap-3 p-3 bg-gray-50 rounded-lg">
+                            <span class="text-xl">💡</span>
+                            <div>
+                                <p class="text-xs font-bold text-gray-600 uppercase">Dica Digital</p>
+                                <p id="mission-digital" class="text-sm text-gray-800">Carregando...</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="glass-panel p-4 rounded-xl">
+                    <details class="group">
+                        <summary class="flex justify-between items-center font-medium cursor-pointer list-none text-sm text-gray-700">
+                            <span>📞 Script: Resgate (1 ano)</span>
+                            <span class="transition group-open:rotate-180">▼</span>
+                        </summary>
+                        <div class="text-gray-600 mt-3 text-sm italic bg-yellow-50 p-3 rounded border border-yellow-100">
+                            "Olá [Nome], vi que faz um ano dos seus óculos. Como está a adaptação? Estamos com a agenda aberta para uma revisão gratuita..."
+                        </div>
+                    </details>
+                </div>
+
+            </div>
+        </main>
+    </div>
+
+    <!-- LÓGICA DE ENTRADA -->
+    <script>
+        window.handleEnter = async function(e) {
+            e.preventDefault();
+            const nameInput = document.getElementById('access-name').value.trim();
+            const storeInput = document.getElementById('access-store').value.trim();
+
+            if (!nameInput || !storeInput) {
+                alert("Por favor, preencha seu nome e o nome da loja.");
+                return;
+            }
+
+            window.consultantName = nameInput;
+            window.storeName = storeInput;
+            localStorage.setItem('optical_consultant_name', nameInput);
+            localStorage.setItem('optical_store_name', storeInput);
+            
+            document.getElementById('login-view').classList.add('hidden');
+            document.getElementById('dashboard-view').classList.remove('hidden');
+            document.getElementById('header-name').innerHTML = `${nameInput} <span class="text-xs font-normal text-gray-400 block sm:inline">| ${storeInput}</span>`;
+            
+            window.loadDayData(window.currentDayIndex);
+        };
+
+        window.logout = function() {
+            if(confirm("Deseja sair?")) {
+                localStorage.removeItem('optical_consultant_name');
+                localStorage.removeItem('optical_store_name');
+                location.reload();
+            }
+        };
+    </script>
+
+    <!-- LÓGICA DE DADOS E UI -->
+    <script>
+        // TÓPICOS DE TREINAMENTO (1 POR DIA DA SEMANA)
+        const trainingTopics = [
+            { title: "Abertura da Venda", task: "Técnica de Abordagem Não-Invasiva", desc: "Ler script de saudação e praticar sorriso." },
+            { title: "Sondagem", task: "Perguntas Abertas vs Fechadas", desc: "Listar 3 perguntas para descobrir a dor do cliente." },
+            { title: "Demonstração de Produtos", task: "Apresentação de Valor", desc: "Treinar manuseio e limpeza na frente do cliente." },
+            { title: "Técnica CVBA", task: "Característica, Vantagem, Benefício", desc: "Aplicar CVBA em uma lente Multifocal." },
+            { title: "Contorno de Objeção", task: "Matriz de Objeções (Preço/Prazo)", desc: "Estudar 3 respostas para 'Está caro'." },
+            { title: "Fechamento", task: "Técnicas de Fechamento (Ou/Ou)", desc: "Treinar o fechamento experimental." }
+        ];
+
+        // FUNÇÃO PARA GERAR AGENDA DINÂMICA
+        function getDailySchedule(dayIndex) {
+            const topic = trainingTopics[dayIndex % 6]; // Garante que não quebre se for Domingo (6)
+            
+            return [
+                { time: "08:00 - 09:00", title: "Organização", tasks: ["Limpeza vitrines", "Conferir OS", "Definir Meta"] },
+                // NOVO BLOCO DE TREINAMENTO (1 HORA)
+                { time: "09:00 - 10:00", title: `Treinamento: ${topic.title}`, isTraining: true, tasks: [topic.task, topic.desc, "Roleplay rápido (15 min)"] },
+                { time: "10:00 - 11:00", title: "Digital", tasks: ["Postar Stories", "Responder Directs"] },
+                { time: "11:00 - 12:00", title: "CRM", tasks: ["Ligar Clientes", "Aniversariantes"] },
+                { time: "12:00 - 14:00", title: "Almoço", isBreak: true },
+                { time: "14:00 - 15:30", title: "Prospecção", tasks: ["Visitar Vizinhos", "Entregar Cartões"] },
+                { time: "15:30 - 17:30", title: "Salão", tasks: ["Atendimento", "Repor vitrine"] },
+                { time: "17:30 - 18:00", title: "Fechamento", tasks: ["Relatório", "Fechar caixa"] }
+            ];
+        }
+
+        const missions = [
+            { day: "Segunda", title: "Planejamento", main: "Ligar para os 'indecisos' de sábado.", dig: "Postar Motivacional" },
+            { day: "Terça", title: "Externo", main: "Visitar 1 empresa vizinha.", dig: "Vídeo Técnico" },
+            { day: "Quarta", title: "Vitrine", main: "Trocar destaque da vitrine.", dig: "Foco em Lentes" },
+            { day: "Quinta", title: "Ofertas", main: "Resgatar orçamentos antigos.", dig: "#TBT Cliente" },
+            { day: "Sexta", title: "Fechamento", main: "Confirmar agenda de Sábado.", dig: "Prep. Fim de Semana" },
+            { day: "Sábado", title: "Vendas", main: "Criar movimento e servir café.", dig: "Bastidores Loja" },
+        ];
+
+        window.currentDayIndex = 0;
+
+        document.addEventListener('DOMContentLoaded', () => {
+            // Renderiza com o dia atual (Segunda por padrão = 0)
+            renderTimeline(getDailySchedule(0));
+            initChart();
+        });
+
+        function renderTimeline(scheduleData) {
+            const container = document.getElementById('timeline-container');
+            container.innerHTML = '<div class="timeline-line"></div>';
+
+            scheduleData.forEach((block, idx) => {
+                const isBreak = block.isBreak ? 'bg-gray-100 opacity-70' : 'bg-white';
+                const isTraining = block.isTraining ? 'border-l-4 border-indigo-500 bg-indigo-50' : 'border-gray-200';
+                
+                let iconColor = block.isTraining ? 'bg-indigo-500' : 'bg-teal-500';
+                
+                let html = `
+                <div class="relative z-10 mb-6 pl-6">
+                    <div class="absolute left-0 w-3 h-3 ${iconColor} rounded-full border-2 border-white shadow mt-1.5" style="margin-left: 0.8rem;"></div>
+                    <div class="${isBreak} ${isTraining} rounded-lg border p-4 shadow-sm hover:shadow-md transition-shadow">
+                        <div class="flex justify-between items-center mb-2">
+                            <span class="text-xs font-bold text-teal-600 bg-white/50 px-2 py-1 rounded">${block.time}</span>
+                            <h4 class="font-bold text-gray-700">${block.title}</h4>
+                        </div>
+                `;
+                if (!block.isBreak && block.tasks) {
+                    html += `<ul class="space-y-2">`;
+                    block.tasks.forEach((task, tIdx) => {
+                        html += `
+                        <li class="flex items-start gap-2">
+                            <input type="checkbox" id="task-${idx}-${tIdx}" class="checkbox-custom mt-1 shrink-0" onclick="handleTaskClick(event)">
+                            <span class="text-sm text-gray-600 leading-snug">${task}</span>
+                        </li>`;
+                    });
+                    html += `</ul>`;
+                } else if (block.isBreak) {
+                    html += `<p class="text-xs text-gray-400 italic">Pausa para recarregar.</p>`;
+                }
+                html += `</div></div>`;
+                container.insertAdjacentHTML('beforeend', html);
+            });
+        }
+
+        window.setDay = async function(dayIndex) {
+            window.currentDayIndex = dayIndex;
+            document.querySelectorAll('.day-btn').forEach(btn => {
+                const isActive = parseInt(btn.dataset.day) === dayIndex;
+                btn.className = `day-btn flex-1 min-w-[3rem] px-3 py-2 rounded-lg text-sm font-medium transition-colors ${isActive ? 'bg-teal-600 text-white shadow-md' : 'text-gray-500 hover:bg-white'}`;
+            });
+            const m = missions[dayIndex];
+            document.getElementById('mission-title').innerText = m.title;
+            document.getElementById('mission-main').innerText = m.main;
+            
+            // Renderiza cronograma específico do dia
+            renderTimeline(getDailySchedule(dayIndex));
+            
+            await window.loadDayData(dayIndex);
+        };
+
+        window.loadDayData = async function(dayIndex) {
+            document.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.checked = false);
+            ['input-sales', 'input-leads', 'input-appointments', 'input-flow-entries', 'input-flow-conversions'].forEach(id => document.getElementById(id).value = '');
+            document.getElementById('input-goal').value = 2000;
+            document.getElementById('conversion-display').innerText = "0%";
+            updateChart();
+
+            const data = await window.fetchData(dayIndex);
+            if(data) {
+                if(data.sales) document.getElementById('input-sales').value = data.sales;
+                if(data.goal) document.getElementById('input-goal').value = data.goal;
+                if(data.leads) document.getElementById('input-leads').value = data.leads;
+                if(data.appointments) document.getElementById('input-appointments').value = data.appointments;
+                if(data.flowEntries) document.getElementById('input-flow-entries').value = data.flowEntries;
+                if(data.flowConversions) document.getElementById('input-flow-conversions').value = data.flowConversions;
+                
+                // Recalcular conversão visual
+                const ent = parseInt(data.flowEntries) || 0;
+                const conv = parseInt(data.flowConversions) || 0;
+                if(ent > 0) document.getElementById('conversion-display').innerText = ((conv/ent)*100).toFixed(1) + "%";
+
+                if(data.tasks) {
+                    Object.keys(data.tasks).forEach(key => {
+                        const cb = document.getElementById(`task-${key}`);
+                        if(cb) cb.checked = data.tasks[key];
+                    });
+                }
+                updateChart();
+            }
+        };
+
+        window.handleTaskClick = function(e) {
+            const allTasks = {};
+            document.querySelectorAll('.checkbox-custom').forEach(cb => {
+                const idParts = cb.id.replace('task-', '');
+                allTasks[idParts] = cb.checked;
+            });
+            window.saveData({ tasks: allTasks });
+        };
+
+        let debounceTimer;
+        window.handleMetricChange = function() {
+            // Atualizar cálculo de conversão
+            const entries = parseInt(document.getElementById('input-flow-entries').value) || 0;
+            const conversions = parseInt(document.getElementById('input-flow-conversions').value) || 0;
+            const rate = entries > 0 ? ((conversions / entries) * 100).toFixed(1) : 0;
+            document.getElementById('conversion-display').innerText = rate + "%";
+
+            updateChart();
+            clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(() => {
+                window.saveData({
+                    sales: document.getElementById('input-sales').value,
+                    goal: document.getElementById('input-goal').value,
+                    leads: document.getElementById('input-leads').value,
+                    appointments: document.getElementById('input-appointments').value,
+                    flowEntries: entries,
+                    flowConversions: conversions
+                });
+            }, 1000);
+        };
+
+        let chart;
+        function initChart() {
+            const ctx = document.getElementById('performanceChart').getContext('2d');
+            chart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: ['Realizado', 'Meta'],
+                    datasets: [{
+                        label: 'Valor (R$)',
+                        data: [0, 2000],
+                        backgroundColor: ['#0d9488', '#e5e7eb'],
+                        borderRadius: 6,
+                        barPercentage: 0.6
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        y: { beginAtZero: true, grid: { color: '#f3f4f6' } },
+                        x: { grid: { display: false } }
+                    }
+                }
+            });
+        }
+
+        function updateChart() {
+            const sales = parseFloat(document.getElementById('input-sales').value) || 0;
+            const goal = parseFloat(document.getElementById('input-goal').value) || 2000;
+            chart.data.datasets[0].data = [sales, goal];
+            chart.data.datasets[0].backgroundColor[0] = sales >= goal ? '#10b981' : '#0d9488';
+            chart.update();
+        }
+    </script>
+</body>
+</html>
