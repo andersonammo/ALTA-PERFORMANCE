@@ -1,10 +1,11 @@
 <!-- 
-    PAINEL DE CONSULTOR - ABA MIX INTEGRADA AO PAINEL DIÁRIO
+    PAINEL DE CONSULTOR - VERSÃO COM VENDA DIÁRIA E ACUMULADO
     
-    Alterações:
-    1. Integração: A seção de inputs "Mix de Produtos" foi movida para dentro da aba "Painel Diário".
-    2. Navegação Simplificada: A aba "Mix de Produtos" foi removida do menu, já que agora faz parte do dashboard principal.
-    3. Layout: A coluna da direita do dashboard agora contém Metas, Fluxo, Mix de Produtos e Missão.
+    Novidades:
+    1. Novo Campo "Venda do Dia": Para registrar a produção específica da data.
+    2. Campo "Acumulado Mês": Mantido para cálculo da Meta Inteligente (Gap).
+    3. Correção de Lógica: O Resumo Geral agora soma as "Vendas do Dia" para um total preciso.
+    4. Visual: Cor laranja substituída pelo amarelo das Óticas Ammo.
 -->
 
 <!DOCTYPE html>
@@ -27,7 +28,7 @@
         import { getFirestore, doc, setDoc, getDoc } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
 
         const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'otica-mix-integrated-v17';
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'otica-daily-accumulated-v18';
         
         window.db = null;
         window.auth = null;
@@ -39,7 +40,7 @@
             
             if (!firebaseConfig.apiKey && Object.keys(firebaseConfig).length === 0) {
                 console.warn("Sem chaves Firebase. Modo Offline.");
-                statusEl.innerHTML = "<span class='text-amber-200'>⚠ Modo Offline</span>";
+                statusEl.innerHTML = "<span class='text-yellow-200'>⚠ Modo Offline</span>";
                 window.authReady = true;
                 return;
             }
@@ -161,7 +162,9 @@
 
                 return {
                     "Data": item.date, "Loja": item.store, "Consultor": item.consultant,
-                    "Vendas (R$)": item.sales, "Meta (R$)": item.goal,
+                    "Venda do Dia (R$)": parseFloat(item.dailySales) || 0,
+                    "Acumulado Mês (R$)": parseFloat(item.accumulatedSales) || 0, 
+                    "Meta (R$)": parseFloat(item.goal) || 0,
                     "Fluxo Total": entries, "Vendas Qtd": conv, "Conversão": rate,
                     "Sol": sun, "Grau": grade, "Kits": kits, "Seguros": insurance,
                     "Perda Solar (R$)": gapSun * 189, "Perda Kits (R$)": gapKit * 20, "Perda Seguros (Qtd)": gapIns
@@ -181,16 +184,17 @@
             const localHistory = JSON.parse(localStorage.getItem(historyKey) || '{}');
             const records = Object.values(localHistory);
 
-            let tSales=0, tFlow=0, tSun=0, tKit=0, tInsQtd=0;
+            let tDailySales=0, tFlow=0, tSun=0, tKit=0, tInsQtd=0;
             
-            // Acumuladores de Metas e Realizados
             let accSunMeta=0, accSunReal=0;
             let accKitMeta=0, accKitReal=0;
             let accInsMeta=0, accInsReal=0;
             let accFlowLost=0;
 
             records.forEach(item => {
-                tSales += parseFloat(item.sales)||0;
+                // SOMA VENDAS DIÁRIAS (Correção: Não soma acumulados)
+                tDailySales += parseFloat(item.dailySales)||0;
+                
                 const ent = parseInt(item.flowEntries) || 0;
                 const conv = parseInt(item.flowConversions) || 0;
                 const flowLostDay = Math.max(0, ent - conv);
@@ -202,7 +206,6 @@
                 const kit = parseInt(item.prodKit) || 0;
                 const ins = parseInt(item.prodInsurance) || 0;
                 
-                // Acumuladores e Gaps
                 const sunMetaDay = grade;
                 accSunMeta += sunMetaDay;
                 accSunReal += sun;
@@ -220,7 +223,6 @@
             
             const totalLost = tFlow + tSun + tKit;
             
-            // Atualiza Texto Simples
             if(document.getElementById('sum-total-sales')) {
                 document.getElementById('sum-total-sales').innerText = tSales.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'});
                 document.getElementById('sum-total-lost').innerText = totalLost.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'});
@@ -272,10 +274,10 @@
 <body class="min-h-screen flex flex-col">
 
     <!-- TELA DE ENTRADA -->
-    <div id="login-view" class="fixed inset-0 z-50 flex items-center justify-center bg-gradient-to-br from-amber-400 via-orange-400 to-yellow-500 px-4">
+    <div id="login-view" class="fixed inset-0 z-50 flex items-center justify-center bg-gradient-to-br from-amber-400 via-yellow-500 to-amber-500 px-4">
         <div class="bg-white/95 backdrop-blur-md p-8 rounded-3xl shadow-2xl max-w-sm w-full text-center relative z-10 border border-white/50">
             <div class="mb-8">
-                <div class="w-16 h-16 bg-gradient-to-br from-amber-500 to-orange-600 rounded-2xl flex items-center justify-center text-3xl text-white shadow-lg mx-auto mb-4">👓</div>
+                <div class="w-16 h-16 bg-gradient-to-br from-amber-500 to-yellow-500 rounded-2xl flex items-center justify-center text-3xl text-white shadow-lg mx-auto mb-4">👓</div>
                 <h1 class="text-3xl font-extrabold text-gray-800 tracking-tight">Consultor Pro</h1>
                 <p class="text-sm text-gray-500 font-medium mt-1">Gestão de Alta Performance</p>
             </div>
@@ -283,11 +285,11 @@
             <form onsubmit="handleEnter(event)" class="space-y-5">
                 <div class="text-left">
                     <label class="block text-xs font-bold text-gray-500 uppercase mb-1 ml-1 tracking-wide">Quem é você?</label>
-                    <input type="text" id="access-name" class="w-full px-4 py-3.5 rounded-xl bg-gray-50 border border-gray-200 focus:ring-2 focus:ring-orange-500 outline-none text-gray-800 font-medium transition-all" placeholder="Seu Nome" required>
+                    <input type="text" id="access-name" class="w-full px-4 py-3.5 rounded-xl bg-gray-50 border border-gray-200 focus:ring-2 focus:ring-yellow-500 outline-none text-gray-800 font-medium transition-all" placeholder="Seu Nome" required>
                 </div>
                 <div class="text-left">
                     <label class="block text-xs font-bold text-gray-500 uppercase mb-1 ml-1 tracking-wide">Nome da Loja</label>
-                    <input type="text" id="access-store" class="w-full px-4 py-3.5 rounded-xl bg-gray-50 border border-gray-200 focus:ring-2 focus:ring-orange-500 outline-none text-gray-800 font-medium transition-all" placeholder="Ex: Ótica Centro" required>
+                    <input type="text" id="access-store" class="w-full px-4 py-3.5 rounded-xl bg-gray-50 border border-gray-200 focus:ring-2 focus:ring-yellow-500 outline-none text-gray-800 font-medium transition-all" placeholder="Ex: Ótica Centro" required>
                 </div>
                 <button type="submit" id="btn-enter" class="w-full bg-gradient-to-r from-gray-900 to-gray-800 hover:from-black text-white font-bold py-4 px-6 rounded-xl shadow-xl transform transition-all hover:scale-[1.02] active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed">
                     Acessar Painel ➜
@@ -318,6 +320,7 @@
                     </div>
                     <div class="flex bg-slate-100 p-1.5 rounded-xl w-full md:w-auto overflow-x-auto shadow-inner">
                         <button onclick="switchTab('dashboard')" id="tab-dashboard" class="flex-1 px-4 py-2 rounded-lg text-sm font-bold bg-white shadow-sm text-indigo-700 transition-all whitespace-nowrap">Painel Diário</button>
+                        <!-- Tab Mix removida pois está integrada -->
                         <button onclick="switchTab('summary')" id="tab-summary" class="flex-1 px-4 py-2 rounded-lg text-sm font-medium text-slate-500 hover:text-indigo-600 transition-all whitespace-nowrap">Resumo Geral</button>
                         <button onclick="switchTab('materials')" id="tab-materials" class="flex-1 px-4 py-2 rounded-lg text-sm font-medium text-slate-500 hover:text-indigo-600 transition-all whitespace-nowrap">Materiais</button>
                     </div>
@@ -329,29 +332,33 @@
         <main id="view-dashboard" class="flex-grow max-w-7xl mx-auto px-4 py-8 w-full grid grid-cols-1 lg:grid-cols-12 gap-8">
             <div class="lg:col-span-12 flex bg-white p-2 rounded-2xl shadow-sm border border-gray-100 overflow-x-auto scrollbar-hide" id="days-container"></div>
 
-            <!-- Coluna Esquerda: Cronograma -->
             <div class="lg:col-span-7 flex flex-col gap-6 order-2 lg:order-1">
                 <div class="glass-panel p-6 rounded-2xl border-l-4 border-indigo-500 bg-white">
                     <h2 class="text-xl font-bold text-slate-800">Cronograma Diário</h2>
                     <p class="text-sm text-slate-500">Checklist de tarefas.</p>
                 </div>
+                <!-- CONTAINER DO CHECKLIST -->
                 <div class="relative pl-4" id="timeline-container"></div>
             </div>
 
-            <!-- Coluna Direita: Ferramentas -->
             <div class="lg:col-span-5 flex flex-col gap-6 order-1 lg:order-2">
                 
-                <!-- CARD 1: METAS E FLUXO -->
+                <!-- METAS E FLUXO -->
                 <div class="glass-panel p-6 rounded-2xl bg-white">
                     <h3 class="text-slate-800 font-bold mb-6 text-lg">Metas e Fluxo</h3>
                     <div class="grid grid-cols-2 gap-4 mb-6">
+                        <!-- LINHA 1: META MENSAL E ACUMULADO -->
                         <div class="col-span-2 sm:col-span-1"><label class="text-xs text-slate-500 font-bold mb-1.5 block uppercase">Meta Mensal</label><div class="relative"><span class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold">R$</span><input type="number" id="input-goal" class="w-full pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-lg font-bold text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500 transition-all" value="40000" oninput="handleMetricChange()"></div></div>
-                        <div class="col-span-2 sm:col-span-1"><label class="text-xs text-slate-500 font-bold mb-1.5 block uppercase">Já Vendido</label><div class="relative"><span class="absolute left-3 top-1/2 -translate-y-1/2 text-emerald-500 font-bold">R$</span><input type="number" id="input-sales" class="w-full pl-9 pr-3 py-2.5 bg-emerald-50/50 border border-emerald-100 rounded-xl text-lg font-bold text-emerald-700 outline-none focus:ring-2 focus:ring-emerald-500 transition-all" placeholder="0" oninput="handleMetricChange()"></div></div>
+                        <div class="col-span-2 sm:col-span-1"><label class="text-xs text-slate-500 font-bold mb-1.5 block uppercase">Acumulado Mês</label><div class="relative"><span class="absolute left-3 top-1/2 -translate-y-1/2 text-indigo-500 font-bold">R$</span><input type="number" id="input-sales" class="w-full pl-9 pr-3 py-2.5 bg-indigo-50/50 border border-indigo-100 rounded-xl text-lg font-bold text-indigo-700 outline-none focus:ring-2 focus:ring-indigo-500 transition-all" placeholder="0" oninput="handleMetricChange()"></div></div>
                         
-                        <div class="col-span-2 bg-gradient-to-r from-amber-50 to-orange-50 p-4 rounded-xl border border-amber-100 mt-2">
+                        <!-- LINHA 2: VENDA DO DIA (NOVO) -->
+                        <div class="col-span-2"><label class="text-xs text-emerald-600 font-bold mb-1.5 block uppercase tracking-wide">⭐ Venda do Dia (Hoje)</label><div class="relative"><span class="absolute left-3 top-1/2 -translate-y-1/2 text-emerald-600 font-bold">R$</span><input type="number" id="input-daily-sales" class="w-full pl-9 pr-3 py-3 bg-emerald-50 border-2 border-emerald-200 rounded-xl text-xl font-bold text-emerald-800 outline-none focus:ring-2 focus:ring-emerald-500 transition-all" placeholder="0" oninput="handleMetricChange()"></div></div>
+
+                        <!-- META INTELIGENTE -->
+                        <div class="col-span-2 bg-gradient-to-r from-yellow-50 to-amber-50 p-4 rounded-xl border border-yellow-100 mt-2">
                             <div class="flex justify-between items-center mb-3">
                                 <p class="text-xs font-bold text-amber-800 uppercase">🎯 Planejamento</p>
-                                <div class="flex items-center gap-2"><label class="text-[10px] text-amber-700 font-bold uppercase">Dias Faltantes:</label><input type="number" id="input-days-left" class="w-16 p-1 text-center text-sm font-bold text-amber-700 bg-white border border-amber-200 rounded outline-none focus:ring-1 focus:ring-amber-500" value="20" oninput="handleMetricChange()"></div>
+                                <div class="flex items-center gap-2"><label class="text-[10px] text-amber-700 font-bold uppercase">Dias Faltantes:</label><input type="number" id="input-days-left" class="w-16 p-1 text-center text-sm font-bold text-amber-700 bg-white border border-yellow-200 rounded outline-none focus:ring-1 focus:ring-yellow-500" value="20" oninput="handleMetricChange()"></div>
                             </div>
                             <div class="flex items-end justify-between">
                                 <div><label class="text-[10px] text-slate-500 font-bold block uppercase">Falta Vender</label><p id="remaining-goal-display" class="text-sm font-bold text-slate-700">R$ 0,00</p></div>
@@ -359,6 +366,7 @@
                             </div>
                         </div>
 
+                        <!-- Fluxo -->
                         <div class="col-span-2 bg-slate-50 p-4 rounded-xl border border-slate-200 mt-2">
                             <p class="text-xs font-bold text-slate-600 uppercase mb-3">Fluxo de Atendimento</p>
                             <div class="grid grid-cols-3 gap-4 items-end">
@@ -374,7 +382,7 @@
                     <div class="chart-container"><canvas id="performanceChart"></canvas></div>
                 </div>
 
-                <!-- CARD 2: MIX DE PRODUTOS (INTEGRADO) -->
+                <!-- MIX DE PRODUTOS (INTEGRADO) -->
                 <div class="glass-panel p-6 rounded-2xl border-l-4 border-violet-500 bg-white mt-6">
                     <h3 class="text-slate-800 font-bold mb-4 text-lg">Mix de Produtos (Dia)</h3>
                     <div class="grid grid-cols-2 gap-4">
@@ -388,7 +396,7 @@
                     </div>
                 </div>
 
-                <!-- CARD 3: MISSÃO -->
+                <!-- MISSÃO -->
                 <div class="glass-panel p-6 rounded-2xl relative overflow-hidden group bg-white mt-6">
                     <div class="absolute top-0 right-0 w-32 h-32 bg-gradient-to-bl from-indigo-50 to-white rounded-bl-full -mr-8 -mt-8 transition-transform group-hover:scale-110"></div>
                     <h3 class="text-indigo-500 text-xs font-bold uppercase tracking-wider mb-2">Foco de Hoje</h3>
@@ -398,7 +406,6 @@
                         <div class="flex items-start gap-4 p-4 bg-slate-50 rounded-xl border border-slate-100"><span class="text-2xl">💡</span><div><p class="text-xs font-bold text-slate-500 uppercase">Dica Digital</p><p id="mission-digital" class="text-sm text-slate-800 leading-relaxed">Carregando...</p></div></div>
                     </div>
                 </div>
-
             </div>
         </main>
 
@@ -407,22 +414,22 @@
             <div class="bg-white rounded-2xl shadow-sm border border-gray-200 p-8">
                 <div class="mb-8 border-b border-gray-100 pb-6">
                     <h2 class="text-3xl font-extrabold text-slate-800">Resumo Geral Acumulado</h2>
-                    <p class="text-slate-500 mt-1">Soma total de todo o período salvo.</p>
+                    <p class="text-slate-500 mt-1">Soma de todas as vendas e oportunidades.</p>
                 </div>
 
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-8 mb-10">
                     <div class="bg-emerald-50 rounded-2xl p-6 border border-emerald-100">
-                        <p class="text-sm font-bold text-emerald-600 uppercase tracking-wide mb-2">Total Vendido</p>
+                        <p class="text-sm font-bold text-emerald-600 uppercase tracking-wide mb-2">Total Vendido (Soma Diária)</p>
                         <p id="sum-total-sales" class="text-4xl font-extrabold text-emerald-700">R$ 0,00</p>
                     </div>
                     <div class="bg-rose-50 rounded-2xl p-6 border border-rose-100">
-                        <p class="text-sm font-bold text-rose-600 uppercase tracking-wide mb-2">Total Deixado na Mesa (Financeiro)</p>
+                        <p class="text-sm font-bold text-rose-600 uppercase tracking-wide mb-2">Total Deixado na Mesa (Potencial)</p>
                         <p id="sum-total-lost" class="text-4xl font-extrabold text-rose-700">R$ 0,00</p>
                     </div>
                 </div>
                 
                 <div class="bg-slate-50 rounded-xl p-6 border border-slate-100 mb-8">
-                    <h3 class="font-bold text-slate-700 mb-4">Detalhamento Financeiro (Perdas Acumuladas)</h3>
+                    <h3 class="font-bold text-slate-700 mb-4">Detalhamento (Acumulado)</h3>
                     <div class="space-y-4">
                         <div class="flex justify-between items-center border-b border-slate-200 pb-2"><span class="text-sm text-slate-600">Fluxo Perdido</span><span id="sum-lost-flow" class="font-bold text-slate-800">R$ 0,00</span></div>
                         <div class="flex justify-between items-center border-b border-slate-200 pb-2"><span class="text-sm text-slate-600">2ª Peça Solar (Gap)</span><span id="sum-lost-sun" class="font-bold text-slate-800">R$ 0,00</span></div>
@@ -435,39 +442,23 @@
                 <div class="bg-gradient-to-br from-violet-50 to-indigo-50 border border-violet-100 rounded-2xl p-8">
                     <h3 class="text-xl font-bold text-indigo-900 mb-6 flex items-center gap-3"><span class="bg-indigo-600 text-white rounded-lg p-1">🚀</span> Potencial de Vendas (Acumulado)</h3>
                     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                        <!-- Fluxo -->
                         <div class="bg-white p-5 rounded-xl shadow-sm border border-red-50 relative">
                             <p class="text-xs font-bold text-slate-400 uppercase tracking-wide">Fluxo Perdido</p>
-                            <div class="flex justify-between items-end border-b border-slate-100 pb-3 mb-3">
-                                <div><span class="text-[10px] font-bold text-slate-400 uppercase">Qtd Total</span><p id="pot-flow-lost" class="text-xl font-bold text-slate-700">0</p></div>
-                                <div class="text-right"><span class="text-[10px] font-bold text-slate-400 uppercase">Valor</span><p id="pot-flow-revenue" class="text-xl font-bold text-red-500">R$ 0</p></div>
-                            </div>
+                            <div class="flex justify-between items-end border-b border-slate-100 pb-3 mb-3"><div><span class="text-[10px] font-bold text-slate-400 uppercase">Qtd Total</span><p id="pot-flow-lost" class="text-xl font-bold text-slate-700">0</p></div><div class="text-right"><span class="text-[10px] font-bold text-slate-400 uppercase">Valor</span><p id="pot-flow-revenue" class="text-xl font-bold text-red-500">R$ 0</p></div></div>
                         </div>
-                        <!-- Solar -->
                         <div class="bg-white p-5 rounded-xl shadow-sm border border-indigo-50">
                             <p class="text-xs font-bold text-slate-400 uppercase tracking-wide">Solar (Gap)</p>
-                            <div class="flex justify-between items-end border-b border-slate-100 pb-3 mb-3">
-                                <div><span class="text-[10px] font-bold text-slate-400 uppercase">Meta Total</span><p id="pot-sun-target" class="text-xl font-bold text-slate-700">0</p></div>
-                                <div class="text-right"><span class="text-[10px] font-bold text-slate-400 uppercase">Real</span><p id="pot-sun-actual" class="text-xl font-bold text-indigo-600">0</p></div>
-                            </div>
+                            <div class="flex justify-between items-end border-b border-slate-100 pb-3 mb-3"><div><span class="text-[10px] font-bold text-slate-400 uppercase">Meta Total</span><p id="pot-sun-target" class="text-xl font-bold text-slate-700">0</p></div><div class="text-right"><span class="text-[10px] font-bold text-slate-400 uppercase">Real</span><p id="pot-sun-actual" class="text-xl font-bold text-indigo-600">0</p></div></div>
                             <div><p id="pot-sun-gap-qtd" class="text-sm font-bold text-slate-400">Gap: 0</p><p id="pot-sun-revenue" class="text-xs text-red-400">R$ 0</p></div>
                         </div>
-                        <!-- Kits -->
                         <div class="bg-white p-5 rounded-xl shadow-sm border border-indigo-50">
                             <p class="text-xs font-bold text-slate-400 uppercase tracking-wide">Kits (Gap)</p>
-                            <div class="flex justify-between items-end border-b border-slate-100 pb-3 mb-3">
-                                <div><span class="text-[10px] font-bold text-slate-400 uppercase">Meta Total</span><p id="pot-kit-target" class="text-xl font-bold text-slate-700">0</p></div>
-                                <div class="text-right"><span class="text-[10px] font-bold text-slate-400 uppercase">Real</span><p id="pot-kit-actual" class="text-xl font-bold text-indigo-600">0</p></div>
-                            </div>
+                            <div class="flex justify-between items-end border-b border-slate-100 pb-3 mb-3"><div><span class="text-[10px] font-bold text-slate-400 uppercase">Meta Total</span><p id="pot-kit-target" class="text-xl font-bold text-slate-700">0</p></div><div class="text-right"><span class="text-[10px] font-bold text-slate-400 uppercase">Real</span><p id="pot-kit-actual" class="text-xl font-bold text-indigo-600">0</p></div></div>
                             <div><p id="pot-kit-gap-qtd" class="text-sm font-bold text-slate-400">Gap: 0</p><p id="pot-kit-revenue" class="text-xs text-red-400">R$ 0</p></div>
                         </div>
-                        <!-- Seguros -->
                         <div class="bg-white p-5 rounded-xl shadow-sm border border-indigo-50">
                             <p class="text-xs font-bold text-slate-400 uppercase tracking-wide">Seguros (Gap)</p>
-                            <div class="flex justify-between items-end border-b border-slate-100 pb-3 mb-3">
-                                <div><span class="text-[10px] font-bold text-slate-400 uppercase">Meta Total</span><p id="pot-ins-target" class="text-xl font-bold text-slate-700">0</p></div>
-                                <div class="text-right"><span class="text-[10px] font-bold text-slate-400 uppercase">Real</span><p id="pot-ins-actual" class="text-xl font-bold text-indigo-600">0</p></div>
-                            </div>
+                            <div class="flex justify-between items-end border-b border-slate-100 pb-3 mb-3"><div><span class="text-[10px] font-bold text-slate-400 uppercase">Meta Total</span><p id="pot-ins-target" class="text-xl font-bold text-slate-700">0</p></div><div class="text-right"><span class="text-[10px] font-bold text-slate-400 uppercase">Real</span><p id="pot-ins-actual" class="text-xl font-bold text-indigo-600">0</p></div></div>
                             <div><p id="pot-ins-gap-qtd" class="text-sm font-bold text-slate-400">Gap: 0</p><p class="text-xs text-slate-400">Sem valor financeiro</p></div>
                         </div>
                     </div>
@@ -482,17 +473,8 @@
                     <h2 class="text-3xl font-extrabold text-teal-900 tracking-tight">📚 50 Scripts para Vender Mais</h2>
                 </div>
                 <div class="divide-y divide-gray-100">
-                    <details class="group p-6 open:bg-slate-50 transition-all cursor-pointer"><summary class="flex justify-between items-center font-bold text-slate-700 text-lg"><span>👋 Primeiro Contato</span><span class="text-teal-500 group-open:rotate-180 transition-transform">▼</span></summary><div class="mt-6 text-gray-600 space-y-6 pl-4 border-l-4 border-teal-400">
-                         <p class="italic mb-2">"Olá [Nome], meu nome é [Seu Nome], da [Empresa]. Vi que tem interesse em [Área]..."</p>
-                         <p class="italic">"Em apenas 2 minutos posso te mostrar como podemos ajudar?"</p>
-                    </div></details>
-                    <details class="group p-6 open:bg-slate-50 transition-all cursor-pointer"><summary class="flex justify-between items-center font-bold text-slate-700 text-lg"><span>💰 Objeção de Preço</span><span class="text-teal-500 group-open:rotate-180 transition-transform">▼</span></summary><div class="mt-6 text-gray-600 space-y-6 pl-4 border-l-4 border-teal-400">
-                        <p class="italic mb-2">"Entendo sua preocupação. Mas nosso produto oferece [Benefício]..."</p>
-                        <p class="italic">"Este valor está fora do orçamento ou podemos negociar a forma de pagamento?"</p>
-                    </div></details>
-                     <details class="group p-6 open:bg-slate-50 transition-all cursor-pointer"><summary class="flex justify-between items-center font-bold text-slate-700 text-lg"><span>🤔 "Vou Pensar"</span><span class="text-teal-500 group-open:rotate-180 transition-transform">▼</span></summary><div class="mt-6 text-gray-600 space-y-6 pl-4 border-l-4 border-teal-400"><p class="italic">"Entendo. Há alguma dúvida específica que eu possa esclarecer agora?"</p></div></details>
-                     <details class="group p-6 open:bg-slate-50 transition-all cursor-pointer"><summary class="flex justify-between items-center font-bold text-slate-700 text-lg"><span>🤝 Fechamento</span><span class="text-teal-500 group-open:rotate-180 transition-transform">▼</span></summary><div class="mt-6 text-gray-600 space-y-6 pl-4 border-l-4 border-teal-400"><p class="italic">"Vamos começar? Qual forma de pagamento prefere?"</p></div></details>
-                     <details class="group p-6 open:bg-slate-50 transition-all cursor-pointer"><summary class="flex justify-between items-center font-bold text-slate-700 text-lg"><span>🎁 Pós-Venda</span><span class="text-teal-500 group-open:rotate-180 transition-transform">▼</span></summary><div class="mt-6 text-gray-600 space-y-6 pl-4 border-l-4 border-teal-400"><p class="italic">"Obrigado pela compra! Lembre-se: use apenas o spray e flanela para limpar."</p></div></details>
+                    <details class="group p-6 open:bg-slate-50 transition-all cursor-pointer"><summary class="flex justify-between items-center font-bold text-slate-700 text-lg"><span>👋 Primeiro Contato</span><span class="text-teal-500 group-open:rotate-180 transition-transform">▼</span></summary><div class="mt-6 text-gray-600 space-y-6 pl-4 border-l-4 border-teal-400"><p class="italic">"[Nome], meu nome é [Seu Nome]..."</p></div></details>
+                    <details class="group p-6 open:bg-slate-50 transition-all cursor-pointer"><summary class="flex justify-between items-center font-bold text-slate-700 text-lg"><span>💰 Objeção de Preço</span><span class="text-teal-500 group-open:rotate-180 transition-transform">▼</span></summary><div class="mt-6 text-gray-600 space-y-6 pl-4 border-l-4 border-teal-400"><p class="italic">"Entendo a preocupação..."</p></div></details>
                 </div>
             </div>
         </main>
@@ -588,21 +570,25 @@
 
             // Meta Inteligente
             const g = parseFloat(document.getElementById('input-goal').value)||0;
-            const s = parseFloat(document.getElementById('input-sales').value)||0;
+            const accumulated = parseFloat(document.getElementById('input-sales').value)||0; // Acumulado (Input-sales)
+            const daily = parseFloat(document.getElementById('input-daily-sales').value)||0; // Diario
+
             const d = parseInt(document.getElementById('input-days-left').value)||20;
-            const rem = Math.max(0, g-s);
+            const rem = Math.max(0, g-accumulated);
             document.getElementById('remaining-goal-display').innerText=`R$ ${rem.toLocaleString()}`;
             document.getElementById('daily-needed-display').innerText=`R$ ${d>0?(rem/d).toLocaleString():0}`;
 
             // Chart
-            chart.data.datasets[0].data = [s, g];
+            chart.data.datasets[0].data = [accumulated, g];
             chart.update();
 
             // Salvar
             clearTimeout(window.saveTimer);
             window.saveTimer = setTimeout(() => {
                 const data = {
-                    sales: s, goal: g, daysLeft: d,
+                    sales: accumulated, // Mantem como acumulado para compatibilidade
+                    dailySales: daily, // Novo campo diario
+                    goal: g, daysLeft: d,
                     leads: document.getElementById('input-leads').value,
                     appointments: document.getElementById('input-appointments').value,
                     flowEntries: ent, flowConversions: conv,
@@ -618,19 +604,39 @@
         // CARREGAR DADOS
         window.loadDayData = async (i) => {
             const data = await window.fetchData(i);
-            const ids = ['input-sales','input-goal','input-days-left','input-leads','input-appointments','input-flow-entries','input-flow-conversions',
-                        'input-prod-sun','input-prod-grade','input-prod-contact','input-prod-kit','input-prod-chain','input-prod-kids','input-prod-insurance'];
-            ids.forEach(k => document.getElementById(k).value = data ? (data[k.replace('input-','')] || (k==='input-goal'?40000:0)) : (k==='input-goal'?40000:0));
-            if(!data) document.getElementById('input-days-left').value = 20;
+            // Reseta
+            document.querySelectorAll('input').forEach(el => { if(el.id.startsWith('input-')) el.value = ''; });
+            document.getElementById('input-goal').value = 40000;
             
-            // Restore Checkboxes
-            if(data && data.tasks) {
-                 Object.keys(data.tasks).forEach(key => {
-                    const cb = document.getElementById(`task-${key}`);
-                    if(cb) cb.checked = data.tasks[key];
-                 });
+            if(data) {
+                if(data.sales) document.getElementById('input-sales').value = data.sales;
+                if(data.dailySales) document.getElementById('input-daily-sales').value = data.dailySales;
+                if(data.goal) document.getElementById('input-goal').value = data.goal;
+                if(data.daysLeft) document.getElementById('input-days-left').value = data.daysLeft;
+                if(data.leads) document.getElementById('input-leads').value = data.leads;
+                if(data.appointments) document.getElementById('input-appointments').value = data.appointments;
+                if(data.flowEntries) document.getElementById('input-flow-entries').value = data.flowEntries;
+                if(data.flowConversions) document.getElementById('input-flow-conversions').value = data.flowConversions;
+                
+                if(data.prodSun) document.getElementById('input-prod-sun').value = data.prodSun;
+                if(data.prodGrade) document.getElementById('input-prod-grade').value = data.prodGrade;
+                if(data.prodContact) document.getElementById('input-prod-contact').value = data.prodContact;
+                if(data.prodKit) document.getElementById('input-prod-kit').value = data.prodKit;
+                if(data.prodChain) document.getElementById('input-prod-chain').value = data.prodChain;
+                if(data.prodKids) document.getElementById('input-prod-kids').value = data.prodKids;
+                if(data.prodInsurance) document.getElementById('input-prod-insurance').value = data.prodInsurance;
+
+                if(data.tasks) {
+                     Object.keys(data.tasks).forEach(key => {
+                        const cb = document.getElementById(`task-${key}`);
+                        if(cb) cb.checked = data.tasks[key];
+                     });
+                } else {
+                     document.querySelectorAll('.checkbox-custom').forEach(c => c.checked = false);
+                }
             } else {
-                 document.querySelectorAll('.checkbox-custom').forEach(c => c.checked = false);
+                document.getElementById('input-days-left').value = 20;
+                document.getElementById('conversion-display').innerText = "0%";
             }
 
             window.handleMetricChange();
@@ -649,10 +655,9 @@
         let chart;
         document.addEventListener('DOMContentLoaded', () => {
             renderDays();
-            // Start with today's schedule
             renderTimeline(getDailySchedule(0));
             const ctx = document.getElementById('performanceChart').getContext('2d');
-            chart = new Chart(ctx, { type: 'bar', data: { labels: ['Vendido', 'Meta'], datasets: [{ data: [0,0], backgroundColor: ['#4f46e5', '#e2e8f0'], borderRadius: 8 }] }, options: { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true }, x: { grid: { display: false } } } } });
+            chart = new Chart(ctx, { type: 'bar', data: { labels: ['Acumulado', 'Meta'], datasets: [{ data: [0,0], backgroundColor: ['#4f46e5', '#e2e8f0'], borderRadius: 8 }] }, options: { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true }, x: { grid: { display: false } } } } });
             
             const n = localStorage.getItem('optical_consultant_name');
             const st = localStorage.getItem('optical_store_name');
@@ -679,9 +684,9 @@
             let accFlowLost=0;
 
             Object.values(h).forEach(i => {
-                tSales += parseFloat(i.sales)||0;
+                // USA O NOVO CAMPO DIARIO PARA A SOMA
+                tSales += parseFloat(i.dailySales)||0;
                 
-                // Fluxo
                 const ent = parseInt(i.flowEntries) || 0;
                 const conv = parseInt(i.flowConversions) || 0;
                 const flowLostDay = Math.max(0, ent - conv);
@@ -693,7 +698,6 @@
                 const kit = parseInt(i.prodKit) || 0;
                 const ins = parseInt(i.prodInsurance) || 0;
                 
-                // Acumuladores e Gaps
                 const sunMetaDay = grade;
                 accSunMeta += sunMetaDay;
                 accSunReal += sun;
@@ -711,7 +715,6 @@
             
             const totalLost = tFlow + tSun + tKit;
             
-            // Atualiza Texto Simples
             if(document.getElementById('sum-total-sales')) {
                 document.getElementById('sum-total-sales').innerText = tSales.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'});
                 document.getElementById('sum-total-lost').innerText = totalLost.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'});
@@ -720,31 +723,26 @@
                 document.getElementById('sum-lost-kit').innerText = tKit.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'});
                 document.getElementById('sum-lost-ins').innerText = `${tInsQtd} un`;
 
-                // Atualiza CARDS de Potencial (Agora no Resumo)
-                // Fluxo
+                // CARDS (Resumo)
                 document.getElementById('pot-flow-lost').innerText = accFlowLost;
                 document.getElementById('pot-flow-revenue').innerText = `R$ ${tFlow.toLocaleString('pt-BR', {minimumFractionDigits:0})}`;
                 
-                // Solar
                 document.getElementById('pot-sun-target').innerText = accSunMeta;
                 document.getElementById('pot-sun-actual').innerText = accSunReal;
                 const gapSun = Math.max(0, accSunMeta - accSunReal);
                 document.getElementById('pot-sun-gap-qtd').innerText = `Gap: ${gapSun}`;
                 document.getElementById('pot-sun-revenue').innerText = `R$ ${tSun.toLocaleString('pt-BR', {minimumFractionDigits:0})}`;
 
-                // Kits
                 document.getElementById('pot-kit-target').innerText = accKitMeta;
                 document.getElementById('pot-kit-actual').innerText = accKitReal;
                 const gapKit = Math.max(0, accKitMeta - accKitReal);
                 document.getElementById('pot-kit-gap-qtd').innerText = `Gap: ${gapKit}`;
                 document.getElementById('pot-kit-revenue').innerText = `R$ ${tKit.toLocaleString('pt-BR', {minimumFractionDigits:0})}`;
 
-                // Seguros
                 document.getElementById('pot-ins-target').innerText = accInsMeta;
                 document.getElementById('pot-ins-actual').innerText = accInsReal;
                 const gapIns = Math.max(0, accInsMeta - accInsReal);
                 document.getElementById('pot-ins-gap-qtd').innerText = `Gap: ${gapIns}`;
-                // pot-ins-revenue mantém estático pois é indefinido
             }
         };
     </script>
