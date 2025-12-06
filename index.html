@@ -1,10 +1,10 @@
 <!-- 
-    PAINEL DE CONSULTOR - VERSÃO COMPLETA (SCRIPTS CORRIGIDOS)
+    PAINEL DE CONSULTOR - ABA MIX INTEGRADA AO PAINEL DIÁRIO
     
-    Novidades:
-    1. Aba "Materiais & Scripts" agora contém TODO o conteúdo de apoio solicitado.
-    2. Scripts organizados por categorias expansíveis para fácil leitura.
-    3. Funcionalidades mantidas: Meta Inteligente, Potencial de Vendas (Sol/Kits/Seguros), Firebase e Excel.
+    Alterações:
+    1. Integração: A seção de inputs "Mix de Produtos" foi movida para dentro da aba "Painel Diário".
+    2. Navegação Simplificada: A aba "Mix de Produtos" foi removida do menu, já que agora faz parte do dashboard principal.
+    3. Layout: A coluna da direita do dashboard agora contém Metas, Fluxo, Mix de Produtos e Missão.
 -->
 
 <!DOCTYPE html>
@@ -18,7 +18,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     
     <!-- Firebase SDKs -->
     <script type="module">
@@ -27,48 +27,56 @@
         import { getFirestore, doc, setDoc, getDoc } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
 
         const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'otica-scripts-full-v4';
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'otica-mix-integrated-v17';
         
-        let db, auth;
-        let authReady = false;
-        
-        try {
-            if (!firebaseConfig.apiKey && Object.keys(firebaseConfig).length === 0) {
-                console.warn("Modo Local Ativo (Firebase não configurado).");
-                authReady = true;
-            } else {
-                const app = initializeApp(firebaseConfig);
-                auth = getAuth(app);
-                db = getFirestore(app);
-                
-                const initAuth = async () => {
-                    try {
-                        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                            await signInWithCustomToken(auth, __initial_auth_token);
-                        } else {
-                            await signInAnonymously(auth);
-                        }
-                    } catch (error) {
-                        console.error("Auth Error:", error);
-                        if (!auth.currentUser) await signInAnonymously(auth);
-                    }
-                };
-                initAuth();
+        window.db = null;
+        window.auth = null;
+        window.authReady = false;
 
-                onAuthStateChanged(auth, (user) => {
-                    if (user) {
-                        authReady = true;
-                        document.getElementById('connection-status').innerText = "Nuvem + Local Ativos";
-                        document.getElementById('connection-status').className = "mt-6 text-xs text-green-200 font-bold bg-green-800/20 py-1 px-3 rounded-full inline-block";
-                    }
-                });
+        async function initSystem() {
+            const statusEl = document.getElementById('connection-status');
+            const btnEl = document.getElementById('btn-enter');
+            
+            if (!firebaseConfig.apiKey && Object.keys(firebaseConfig).length === 0) {
+                console.warn("Sem chaves Firebase. Modo Offline.");
+                statusEl.innerHTML = "<span class='text-amber-200'>⚠ Modo Offline</span>";
+                window.authReady = true;
+                return;
             }
-        } catch (e) {
-            console.error("Erro Firebase:", e);
+
+            try {
+                const app = initializeApp(firebaseConfig);
+                window.auth = getAuth(app);
+                window.db = getFirestore(app);
+                
+                statusEl.innerHTML = "<span class='animate-pulse text-white'>Conectando...</span>";
+                
+                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                    await signInWithCustomToken(window.auth, __initial_auth_token);
+                } else {
+                    await signInAnonymously(window.auth);
+                }
+
+            } catch (error) {
+                console.error("Erro Init:", error);
+                statusEl.innerHTML = "<span class='text-red-300'>Erro Conexão</span>";
+                try { if(window.auth) await signInAnonymously(window.auth); } catch(e) {}
+            }
+
+            onAuthStateChanged(window.auth, (user) => {
+                if (user) {
+                    window.authReady = true;
+                    statusEl.innerHTML = "<span class='text-green-300 font-bold'>✓ Conectado</span>";
+                    btnEl.classList.remove('opacity-50', 'cursor-not-allowed');
+                    btnEl.innerText = "Acessar Painel ➜";
+                }
+            });
         }
+        
+        initSystem();
 
         // --- FUNÇÕES DE DADOS ---
-        window.getDateKey = function(dayIndex) {
+        window.getDateKey = (dayIndex) => {
             const today = new Date();
             const dayDiff = dayIndex - (today.getDay() === 0 ? 6 : today.getDay() - 1);
             const targetDate = new Date(today);
@@ -76,9 +84,10 @@
             return targetDate.toISOString().split('T')[0];
         }
 
-        window.saveData = async function(dataObj) {
+        window.saveData = async (dataObj) => {
             if (!window.consultantName) return;
             const dateKey = window.getDateKey(window.currentDayIndex);
+            
             const finalData = { 
                 ...dataObj, 
                 date: dateKey,
@@ -92,289 +101,374 @@
             localHistory[dateKey] = { ...localHistory[dateKey], ...finalData };
             localStorage.setItem(historyKey, JSON.stringify(localHistory));
 
-            const statusEl = document.getElementById('save-status');
-            statusEl.classList.remove('opacity-0');
+            const statusUi = document.getElementById('save-status');
+            if(statusUi) statusUi.classList.remove('opacity-0');
 
-            if (db && authReady) {
+            if (window.db && window.authReady) {
                 const safeName = window.consultantName.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
                 const docId = `${safeName}_${dateKey}`;
-                const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'daily_reports', docId);
+                const docRef = doc(window.db, 'artifacts', appId, 'public', 'data', 'daily_reports', docId);
                 try { await setDoc(docRef, finalData, { merge: true }); } catch (e) { console.error(e); }
             }
-            setTimeout(() => { statusEl.classList.add('opacity-0'); }, 2000);
+            
+            if(statusUi) setTimeout(() => { statusUi.classList.add('opacity-0'); }, 2000);
         };
 
-        window.fetchData = async function(dayIndex) {
+        window.fetchData = async (dayIndex) => {
             const dateKey = window.getDateKey(dayIndex);
             const historyKey = `history_${window.consultantName.replace(/\s+/g, '_').toLowerCase()}`;
             const localHistory = JSON.parse(localStorage.getItem(historyKey) || '{}');
-            let data = localHistory[dateKey] || null;
-
-            if (!data && db && authReady) {
+            let data = null;
+            
+            if (window.db && window.authReady) {
                 const safeName = window.consultantName.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
                 const docId = `${safeName}_${dateKey}`;
-                const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'daily_reports', docId);
+                const docRef = doc(window.db, 'artifacts', appId, 'public', 'data', 'daily_reports', docId);
                 try {
                     const docSnap = await getDoc(docRef);
                     if (docSnap.exists()) data = docSnap.data();
-                } catch (e) { console.error(e); }
+                } catch (e) { console.error("Erro Ler Nuvem:", e); }
             }
+
+            if (!data) data = localHistory[dateKey];
             return data;
         };
 
-        window.exportToExcel = function() {
+        // Exportação
+        window.exportToExcel = () => {
             if (!window.consultantName) return;
             const historyKey = `history_${window.consultantName.replace(/\s+/g, '_').toLowerCase()}`;
             const localHistory = JSON.parse(localStorage.getItem(historyKey) || '{}');
             const records = Object.values(localHistory);
 
-            if (records.length === 0) { alert("Sem dados para exportar."); return; }
+            if (records.length === 0) { alert("Sem dados."); return; }
 
             const excelData = records.map(item => {
                 const entries = parseInt(item.flowEntries) || 0;
                 const conv = parseInt(item.flowConversions) || 0;
                 const rate = entries > 0 ? ((conv / entries) * 100).toFixed(1) + '%' : '0%';
                 
-                // Cálculos de Potencial
                 const grade = parseInt(item.prodGrade) || 0;
                 const sun = parseInt(item.prodSun) || 0;
                 const kits = parseInt(item.prodKit) || 0;
                 const insurance = parseInt(item.prodInsurance) || 0;
                 const totalGlasses = grade + sun;
+                
+                const lostFlow = Math.max(0, entries - conv);
+                const gapSun = Math.max(0, grade - sun);
+                const gapKit = Math.max(0, totalGlasses - kits);
+                const gapIns = Math.max(0, totalGlasses - insurance);
 
                 return {
-                    "Data": item.date, "Consultor": item.consultant, "Loja": item.store,
-                    "Vendas (R$)": item.sales || 0, "Meta (R$)": item.goal || 0,
-                    "Entraram": entries, "Compraram": conv, "Conversão": rate,
-                    "Leads": item.leads || 0, "Agendamentos": item.appointments || 0,
-                    
-                    "Qtd Sol": sun, "Qtd Grau": grade, "Qtd Lentes Ctt": item.prodContact || 0,
-                    "Qtd Kits": kits, "Qtd Correntes": item.prodChain || 0,
-                    "Qtd Infantil": item.prodKids || 0, "Qtd Seguros": insurance,
-
-                    "Meta Solar": grade, "Gap Solar": Math.max(0, grade - sun),
-                    "Meta Kits": totalGlasses, "Gap Kits": Math.max(0, totalGlasses - kits),
-                    "Meta Seguros": totalGlasses, "Gap Seguros": Math.max(0, totalGlasses - insurance)
+                    "Data": item.date, "Loja": item.store, "Consultor": item.consultant,
+                    "Vendas (R$)": item.sales, "Meta (R$)": item.goal,
+                    "Fluxo Total": entries, "Vendas Qtd": conv, "Conversão": rate,
+                    "Sol": sun, "Grau": grade, "Kits": kits, "Seguros": insurance,
+                    "Perda Solar (R$)": gapSun * 189, "Perda Kits (R$)": gapKit * 20, "Perda Seguros (Qtd)": gapIns
                 };
             });
 
             const ws = XLSX.utils.json_to_sheet(excelData);
             const wb = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(wb, ws, "Relatório Geral");
+            XLSX.utils.book_append_sheet(wb, ws, "Relatório");
             XLSX.writeFile(wb, `Relatorio_${window.consultantName}.xlsx`);
-            
-            setTimeout(() => {
-                const driveLink = "https://drive.google.com/drive/folders/1CU0gUxp3smShCpgzABFQSzVCM__tLW0F?usp=drive_link";
-                if(confirm("Baixado! Abrir Google Drive para upload?")) window.open(driveLink, '_blank');
-            }, 1000);
         };
+        
+        // --- CÁLCULO DE RESUMO (AGREGADO) ---
+        window.calculateSummary = () => {
+             if (!window.consultantName) return;
+            const historyKey = `history_${window.consultantName.replace(/\s+/g, '_').toLowerCase()}`;
+            const localHistory = JSON.parse(localStorage.getItem(historyKey) || '{}');
+            const records = Object.values(localHistory);
 
-        window.db = db; window.auth = auth;
+            let tSales=0, tFlow=0, tSun=0, tKit=0, tInsQtd=0;
+            
+            // Acumuladores de Metas e Realizados
+            let accSunMeta=0, accSunReal=0;
+            let accKitMeta=0, accKitReal=0;
+            let accInsMeta=0, accInsReal=0;
+            let accFlowLost=0;
+
+            records.forEach(item => {
+                tSales += parseFloat(item.sales)||0;
+                const ent = parseInt(item.flowEntries) || 0;
+                const conv = parseInt(item.flowConversions) || 0;
+                const flowLostDay = Math.max(0, ent - conv);
+                tFlow += flowLostDay * 399;
+                accFlowLost += flowLostDay;
+
+                const grade = parseInt(item.prodGrade) || 0;
+                const sun = parseInt(item.prodSun) || 0;
+                const kit = parseInt(item.prodKit) || 0;
+                const ins = parseInt(item.prodInsurance) || 0;
+                
+                // Acumuladores e Gaps
+                const sunMetaDay = grade;
+                accSunMeta += sunMetaDay;
+                accSunReal += sun;
+                tSun += Math.max(0, sunMetaDay - sun) * 189;
+
+                const glassesDay = grade + sun;
+                accKitMeta += glassesDay;
+                accKitReal += kit;
+                tKit += Math.max(0, glassesDay - kit) * 20;
+
+                accInsMeta += glassesDay;
+                accInsReal += ins;
+                tInsQtd += Math.max(0, glassesDay - ins);
+            });
+            
+            const totalLost = tFlow + tSun + tKit;
+            
+            // Atualiza Texto Simples
+            if(document.getElementById('sum-total-sales')) {
+                document.getElementById('sum-total-sales').innerText = tSales.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'});
+                document.getElementById('sum-total-lost').innerText = totalLost.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'});
+                document.getElementById('sum-lost-flow').innerText = tFlow.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'});
+                document.getElementById('sum-lost-sun').innerText = tSun.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'});
+                document.getElementById('sum-lost-kit').innerText = tKit.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'});
+                document.getElementById('sum-lost-ins').innerText = `${tInsQtd} un`;
+
+                // Atualiza CARDS de Potencial
+                document.getElementById('pot-flow-lost').innerText = accFlowLost;
+                document.getElementById('pot-flow-revenue').innerText = `R$ ${tFlow.toLocaleString('pt-BR', {minimumFractionDigits:0})}`;
+                
+                document.getElementById('pot-sun-target').innerText = accSunMeta;
+                document.getElementById('pot-sun-actual').innerText = accSunReal;
+                const gapSun = Math.max(0, accSunMeta - accSunReal);
+                document.getElementById('pot-sun-gap-qtd').innerText = `Gap: ${gapSun}`;
+                document.getElementById('pot-sun-revenue').innerText = `R$ ${tSun.toLocaleString('pt-BR', {minimumFractionDigits:0})}`;
+
+                document.getElementById('pot-kit-target').innerText = accKitMeta;
+                document.getElementById('pot-kit-actual').innerText = accKitReal;
+                const gapKit = Math.max(0, accKitMeta - accKitReal);
+                document.getElementById('pot-kit-gap-qtd').innerText = `Gap: ${gapKit}`;
+                document.getElementById('pot-kit-revenue').innerText = `R$ ${tKit.toLocaleString('pt-BR', {minimumFractionDigits:0})}`;
+
+                document.getElementById('pot-ins-target').innerText = accInsMeta;
+                document.getElementById('pot-ins-actual').innerText = accInsReal;
+                const gapIns = Math.max(0, accInsMeta - accInsReal);
+                document.getElementById('pot-ins-gap-qtd').innerText = `Gap: ${gapIns}`;
+            }
+        };
     </script>
 
     <style>
-        body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; color: #1f2937; }
-        .timeline-line { position: absolute; left: 1.25rem; top: 0; bottom: 0; width: 2px; background-color: #e5e7eb; z-index: 0; }
-        .checkbox-custom { appearance: none; width: 1.2em; height: 1.2em; border: 2px solid #0d9488; border-radius: 4px; display: inline-grid; place-content: center; cursor: pointer; }
-        .checkbox-custom::before { content: ""; width: 0.65em; height: 0.65em; transform: scale(0); transition: 120ms transform ease-in-out; box-shadow: inset 1em 1em #0d9488; transform-origin: center; clip-path: polygon(14% 44%, 0 65%, 50% 100%, 100% 16%, 80% 0%, 43% 62%); }
-        .checkbox-custom:checked::before { transform: scale(1); }
-        .chart-container { position: relative; width: 100%; height: 220px; }
-        .glass-panel { background: white; border: 1px solid #e5e7eb; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); }
+        body { font-family: 'Plus Jakarta Sans', sans-serif; background-color: #f8fafc; color: #1e293b; }
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
         
+        .checkbox-custom { appearance: none; width: 1.25em; height: 1.25em; border: 2px solid #6366f1; border-radius: 6px; display: inline-grid; place-content: center; cursor: pointer; transition: all 0.2s; }
+        .checkbox-custom:checked { background-color: #6366f1; border-color: #6366f1; }
+        .checkbox-custom::before { content: ""; width: 0.65em; height: 0.65em; transform: scale(0); transition: 120ms transform ease-in-out; box-shadow: inset 1em 1em white; transform-origin: center; clip-path: polygon(14% 44%, 0 65%, 50% 100%, 100% 16%, 80% 0%, 43% 62%); }
+        .checkbox-custom:checked::before { transform: scale(1); }
+        
+        .glass-panel { background: white; border: 1px solid #f1f5f9; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.02); }
         details > summary { list-style: none; }
         details > summary::-webkit-details-marker { display: none; }
-        details[open] summary ~ * { animation: sweep .3s ease-in-out; }
-        @keyframes sweep { 0% {opacity: 0; transform: translateY(-10px)} 100% {opacity: 1; transform: translateY(0)} }
     </style>
 </head>
 <body class="min-h-screen flex flex-col">
 
     <!-- TELA DE ENTRADA -->
-    <div id="login-view" class="fixed inset-0 z-50 flex items-center justify-center bg-yellow-500 px-4">
-        <div class="bg-white p-8 rounded-2xl shadow-2xl max-w-sm w-full text-center">
-            <div class="mb-6">
-                <span class="text-5xl block mb-2">👓</span>
-                <h1 class="text-2xl font-bold text-gray-800">Painel do Consultor</h1>
-                <p class="text-sm text-gray-500">Alta Performance em Ótica</p>
+    <div id="login-view" class="fixed inset-0 z-50 flex items-center justify-center bg-gradient-to-br from-amber-400 via-orange-400 to-yellow-500 px-4">
+        <div class="bg-white/95 backdrop-blur-md p-8 rounded-3xl shadow-2xl max-w-sm w-full text-center relative z-10 border border-white/50">
+            <div class="mb-8">
+                <div class="w-16 h-16 bg-gradient-to-br from-amber-500 to-orange-600 rounded-2xl flex items-center justify-center text-3xl text-white shadow-lg mx-auto mb-4">👓</div>
+                <h1 class="text-3xl font-extrabold text-gray-800 tracking-tight">Consultor Pro</h1>
+                <p class="text-sm text-gray-500 font-medium mt-1">Gestão de Alta Performance</p>
             </div>
-            <form onsubmit="handleEnter(event)" class="space-y-4">
+            
+            <form onsubmit="handleEnter(event)" class="space-y-5">
                 <div class="text-left">
-                    <label class="block text-xs font-bold text-gray-600 uppercase mb-1 ml-1">Quem é você?</label>
-                    <input type="text" id="access-name" class="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-yellow-500 focus:border-yellow-500 outline-none text-lg" placeholder="Seu Nome" required>
+                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1 ml-1 tracking-wide">Quem é você?</label>
+                    <input type="text" id="access-name" class="w-full px-4 py-3.5 rounded-xl bg-gray-50 border border-gray-200 focus:ring-2 focus:ring-orange-500 outline-none text-gray-800 font-medium transition-all" placeholder="Seu Nome" required>
                 </div>
                 <div class="text-left">
-                    <label class="block text-xs font-bold text-gray-600 uppercase mb-1 ml-1">Nome da Loja</label>
-                    <input type="text" id="access-store" class="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-yellow-500 focus:border-yellow-500 outline-none text-lg" placeholder="Ex: Ótica Centro" required>
+                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1 ml-1 tracking-wide">Nome da Loja</label>
+                    <input type="text" id="access-store" class="w-full px-4 py-3.5 rounded-xl bg-gray-50 border border-gray-200 focus:ring-2 focus:ring-orange-500 outline-none text-gray-800 font-medium transition-all" placeholder="Ex: Ótica Centro" required>
                 </div>
-                <button type="submit" class="w-full bg-teal-600 hover:bg-teal-700 text-white font-bold py-3 px-4 rounded-xl shadow-lg transition-transform hover:scale-[1.02] active:scale-95">Acessar Painel</button>
+                <button type="submit" id="btn-enter" class="w-full bg-gradient-to-r from-gray-900 to-gray-800 hover:from-black text-white font-bold py-4 px-6 rounded-xl shadow-xl transform transition-all hover:scale-[1.02] active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed">
+                    Acessar Painel ➜
+                </button>
             </form>
-            <p id="connection-status" class="mt-6 text-xs text-gray-500 font-medium bg-white/50 inline-block px-2 rounded">Verificando conexão...</p>
+            
+            <p id="connection-status" class="mt-6 text-xs font-medium text-gray-500 bg-white/50 inline-block px-2 rounded">Inicializando...</p>
         </div>
     </div>
 
     <!-- TELA PRINCIPAL -->
-    <div id="dashboard-view" class="hidden flex flex-col min-h-screen w-full">
-        
+    <div id="dashboard-view" class="hidden flex flex-col min-h-screen w-full bg-slate-50">
         <!-- Navbar -->
-        <header class="bg-white border-b border-gray-200 sticky top-0 z-40 shadow-sm">
+        <header class="bg-white/80 backdrop-blur-md border-b border-gray-200 sticky top-0 z-40">
             <div class="max-w-7xl mx-auto px-4 py-3">
                 <div class="flex flex-col md:flex-row justify-between items-center gap-4">
-                    <div class="flex items-center gap-3 w-full md:w-auto">
-                        <div class="h-10 w-10 bg-teal-100 rounded-full flex items-center justify-center text-teal-700 font-bold text-xl">C</div>
+                    <div class="flex items-center gap-4 w-full md:w-auto">
+                        <div class="h-10 w-10 bg-gradient-to-br from-indigo-500 to-violet-600 rounded-xl flex items-center justify-center text-white font-bold text-lg shadow-md">C</div>
                         <div class="flex-1">
-                            <h1 class="text-lg font-bold text-gray-800 leading-tight"><span id="header-name">Consultor</span></h1>
+                            <h1 class="text-lg font-bold text-slate-800 leading-tight"><span id="header-name">Consultor</span></h1>
                             <div class="flex items-center gap-2">
-                                <span class="text-xs text-gray-500">Área de Trabalho</span>
-                                <span id="save-status" class="text-xs font-bold text-green-600 opacity-0 transition-opacity">Salvo ✓</span>
+                                <span class="text-xs font-semibold text-slate-400 uppercase tracking-wide">Área de Trabalho</span>
+                                <span id="save-status" class="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full opacity-0 transition-opacity border border-emerald-100">Salvo ✓</span>
                             </div>
                         </div>
-                        <button onclick="exportToExcel()" class="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white text-xs font-bold py-2 px-3 rounded-lg shadow transition-colors"><span>📥</span> Excel</button>
+                        <button onclick="exportToExcel()" class="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold py-2.5 px-4 rounded-lg shadow-md transition-all"><span>📊</span> Baixar Excel</button>
                         <button onclick="logout()" class="md:hidden text-xs text-red-500 font-bold ml-2">Sair</button>
                     </div>
-                    
-                    <!-- Navegação de Abas -->
-                    <div class="flex bg-gray-100 p-1 rounded-xl w-full md:w-auto overflow-x-auto">
-                        <button onclick="switchTab('dashboard')" id="tab-dashboard" class="flex-1 px-4 py-2 rounded-lg text-sm font-bold bg-white shadow text-teal-700 transition-colors whitespace-nowrap">Painel Diário</button>
-                        <button onclick="switchTab('products')" id="tab-products" class="flex-1 px-4 py-2 rounded-lg text-sm font-medium text-gray-500 hover:text-teal-700 transition-colors whitespace-nowrap">Mix de Produtos</button>
-                        <button onclick="switchTab('materials')" id="tab-materials" class="flex-1 px-4 py-2 rounded-lg text-sm font-medium text-gray-500 hover:text-teal-700 transition-colors whitespace-nowrap">Materiais</button>
+                    <div class="flex bg-slate-100 p-1.5 rounded-xl w-full md:w-auto overflow-x-auto shadow-inner">
+                        <button onclick="switchTab('dashboard')" id="tab-dashboard" class="flex-1 px-4 py-2 rounded-lg text-sm font-bold bg-white shadow-sm text-indigo-700 transition-all whitespace-nowrap">Painel Diário</button>
+                        <button onclick="switchTab('summary')" id="tab-summary" class="flex-1 px-4 py-2 rounded-lg text-sm font-medium text-slate-500 hover:text-indigo-600 transition-all whitespace-nowrap">Resumo Geral</button>
+                        <button onclick="switchTab('materials')" id="tab-materials" class="flex-1 px-4 py-2 rounded-lg text-sm font-medium text-slate-500 hover:text-indigo-600 transition-all whitespace-nowrap">Materiais</button>
                     </div>
                 </div>
             </div>
         </header>
 
         <!-- ABA DASHBOARD -->
-        <main id="view-dashboard" class="flex-grow max-w-7xl mx-auto px-4 py-6 w-full grid grid-cols-1 lg:grid-cols-12 gap-6">
-            <div class="lg:col-span-12 flex bg-white p-2 rounded-xl overflow-x-auto scrollbar-hide border border-gray-200 mb-2">
-                <button onclick="setDay(0)" class="day-btn flex-1 min-w-[3rem] px-3 py-2 rounded-lg text-sm font-medium transition-colors" data-day="0">Seg</button>
-                <button onclick="setDay(1)" class="day-btn flex-1 min-w-[3rem] px-3 py-2 rounded-lg text-sm font-medium transition-colors" data-day="1">Ter</button>
-                <button onclick="setDay(2)" class="day-btn flex-1 min-w-[3rem] px-3 py-2 rounded-lg text-sm font-medium transition-colors" data-day="2">Qua</button>
-                <button onclick="setDay(3)" class="day-btn flex-1 min-w-[3rem] px-3 py-2 rounded-lg text-sm font-medium transition-colors" data-day="3">Qui</button>
-                <button onclick="setDay(4)" class="day-btn flex-1 min-w-[3rem] px-3 py-2 rounded-lg text-sm font-medium transition-colors" data-day="4">Sex</button>
-                <button onclick="setDay(5)" class="day-btn flex-1 min-w-[3rem] px-3 py-2 rounded-lg text-sm font-medium transition-colors" data-day="5">Sáb</button>
-            </div>
+        <main id="view-dashboard" class="flex-grow max-w-7xl mx-auto px-4 py-8 w-full grid grid-cols-1 lg:grid-cols-12 gap-8">
+            <div class="lg:col-span-12 flex bg-white p-2 rounded-2xl shadow-sm border border-gray-100 overflow-x-auto scrollbar-hide" id="days-container"></div>
 
+            <!-- Coluna Esquerda: Cronograma -->
             <div class="lg:col-span-7 flex flex-col gap-6 order-2 lg:order-1">
-                <div class="glass-panel p-5 rounded-xl border-l-4 border-teal-500">
-                    <h2 class="text-lg font-bold text-gray-800">Cronograma Diário</h2>
-                    <p class="text-sm text-gray-500">Siga o fluxo para bater a meta.</p>
+                <div class="glass-panel p-6 rounded-2xl border-l-4 border-indigo-500 bg-white">
+                    <h2 class="text-xl font-bold text-slate-800">Cronograma Diário</h2>
+                    <p class="text-sm text-slate-500">Checklist de tarefas.</p>
                 </div>
                 <div class="relative pl-4" id="timeline-container"></div>
             </div>
 
+            <!-- Coluna Direita: Ferramentas -->
             <div class="lg:col-span-5 flex flex-col gap-6 order-1 lg:order-2">
-                <div class="glass-panel p-6 rounded-xl">
-                    <h3 class="text-gray-800 font-bold mb-4 flex justify-between items-center">
-                        Metas e Fluxo <span class="text-xs font-normal text-gray-400 bg-gray-100 px-2 py-1 rounded">Auto-save</span>
-                    </h3>
-                    <div class="grid grid-cols-2 gap-4 mb-4">
-                        <div class="col-span-2 sm:col-span-1">
-                            <label class="text-xs text-gray-500 font-bold mb-1 block">Meta Mensal (R$)</label>
-                            <input type="number" id="input-goal" class="w-full p-2 bg-gray-50 border border-gray-200 rounded-lg text-lg font-bold text-gray-700 outline-none" value="40000" oninput="handleMetricChange()">
-                        </div>
-                        <div class="col-span-2 sm:col-span-1">
-                            <label class="text-xs text-gray-500 font-bold mb-1 block">Já Vendido (R$)</label>
-                            <input type="number" id="input-sales" class="w-full p-2 bg-gray-50 border border-gray-200 rounded-lg text-lg font-bold text-teal-700 outline-none" placeholder="0" oninput="handleMetricChange()">
-                        </div>
+                
+                <!-- CARD 1: METAS E FLUXO -->
+                <div class="glass-panel p-6 rounded-2xl bg-white">
+                    <h3 class="text-slate-800 font-bold mb-6 text-lg">Metas e Fluxo</h3>
+                    <div class="grid grid-cols-2 gap-4 mb-6">
+                        <div class="col-span-2 sm:col-span-1"><label class="text-xs text-slate-500 font-bold mb-1.5 block uppercase">Meta Mensal</label><div class="relative"><span class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold">R$</span><input type="number" id="input-goal" class="w-full pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-lg font-bold text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500 transition-all" value="40000" oninput="handleMetricChange()"></div></div>
+                        <div class="col-span-2 sm:col-span-1"><label class="text-xs text-slate-500 font-bold mb-1.5 block uppercase">Já Vendido</label><div class="relative"><span class="absolute left-3 top-1/2 -translate-y-1/2 text-emerald-500 font-bold">R$</span><input type="number" id="input-sales" class="w-full pl-9 pr-3 py-2.5 bg-emerald-50/50 border border-emerald-100 rounded-xl text-lg font-bold text-emerald-700 outline-none focus:ring-2 focus:ring-emerald-500 transition-all" placeholder="0" oninput="handleMetricChange()"></div></div>
                         
-                        <div class="col-span-2 bg-yellow-50 p-3 rounded-lg border border-yellow-100 mt-2">
-                            <p class="text-xs font-bold text-yellow-800 uppercase mb-2 flex justify-between">
-                                <span>Planejamento Inteligente</span>
-                                <span id="days-left-display" class="font-normal text-yellow-700">Calculando...</span>
-                            </p>
+                        <div class="col-span-2 bg-gradient-to-r from-amber-50 to-orange-50 p-4 rounded-xl border border-amber-100 mt-2">
+                            <div class="flex justify-between items-center mb-3">
+                                <p class="text-xs font-bold text-amber-800 uppercase">🎯 Planejamento</p>
+                                <div class="flex items-center gap-2"><label class="text-[10px] text-amber-700 font-bold uppercase">Dias Faltantes:</label><input type="number" id="input-days-left" class="w-16 p-1 text-center text-sm font-bold text-amber-700 bg-white border border-amber-200 rounded outline-none focus:ring-1 focus:ring-amber-500" value="20" oninput="handleMetricChange()"></div>
+                            </div>
                             <div class="flex items-end justify-between">
-                                <div>
-                                    <label class="text-[10px] text-gray-500 font-bold block">Falta Vender</label>
-                                    <p id="remaining-goal-display" class="text-sm font-bold text-gray-700">R$ 0,00</p>
-                                </div>
-                                <div class="text-right">
-                                    <label class="text-[10px] text-gray-500 font-bold block">Meta Diária Necessária</label>
-                                    <p id="daily-needed-display" class="text-xl font-bold text-teal-700">R$ 0,00</p>
-                                </div>
+                                <div><label class="text-[10px] text-slate-500 font-bold block uppercase">Falta Vender</label><p id="remaining-goal-display" class="text-sm font-bold text-slate-700">R$ 0,00</p></div>
+                                <div class="text-right"><label class="text-[10px] text-slate-500 font-bold block uppercase">Meta Diária</label><p id="daily-needed-display" class="text-2xl font-extrabold text-indigo-600">R$ 0,00</p></div>
                             </div>
                         </div>
 
-                        <div class="col-span-2 bg-teal-50 p-3 rounded-lg border border-teal-100 mt-2">
-                            <p class="text-xs font-bold text-teal-800 uppercase mb-2">Fluxo de Atendimento</p>
-                            <div class="grid grid-cols-3 gap-3 items-end">
-                                <div><label class="text-[10px] text-gray-500 font-bold block">Entraram</label><input type="number" id="input-flow-entries" class="w-full p-1.5 bg-white border border-gray-300 rounded text-sm text-center font-semibold outline-none" placeholder="0" oninput="handleMetricChange()"></div>
-                                <div><label class="text-[10px] text-gray-500 font-bold block">Compraram</label><input type="number" id="input-flow-conversions" class="w-full p-1.5 bg-white border border-gray-300 rounded text-sm text-center font-semibold outline-none" placeholder="0" oninput="handleMetricChange()"></div>
-                                <div><label class="text-[10px] text-gray-500 font-bold block">Conversão</label><div id="conversion-display" class="w-full p-1.5 bg-teal-600 text-white rounded text-sm text-center font-bold">0%</div></div>
+                        <div class="col-span-2 bg-slate-50 p-4 rounded-xl border border-slate-200 mt-2">
+                            <p class="text-xs font-bold text-slate-600 uppercase mb-3">Fluxo de Atendimento</p>
+                            <div class="grid grid-cols-3 gap-4 items-end">
+                                <div><label class="text-[10px] text-slate-400 font-bold block text-center mb-1">Entraram</label><input type="number" id="input-flow-entries" class="w-full p-2 bg-white border border-slate-200 rounded-lg text-sm text-center font-bold outline-none focus:ring-2 focus:ring-indigo-500" placeholder="0" oninput="handleMetricChange()"></div>
+                                <div><label class="text-[10px] text-slate-400 font-bold block text-center mb-1">Compraram</label><input type="number" id="input-flow-conversions" class="w-full p-2 bg-white border border-slate-200 rounded-lg text-sm text-center font-bold outline-none focus:ring-2 focus:ring-indigo-500" placeholder="0" oninput="handleMetricChange()"></div>
+                                <div><label class="text-[10px] text-slate-400 font-bold block text-center mb-1">Conversão</label><div id="conversion-display" class="w-full p-2 bg-indigo-600 text-white rounded-lg text-sm text-center font-bold shadow-md">0%</div></div>
                             </div>
                         </div>
-                        <div><label class="text-xs text-gray-500 font-bold mb-1 block">Leads</label><input type="number" id="input-leads" class="w-full p-2 bg-gray-50 border border-gray-200 rounded-lg text-sm outline-none" placeholder="0" oninput="handleMetricChange()"></div>
-                        <div><label class="text-xs text-gray-500 font-bold mb-1 block">Agendamentos</label><input type="number" id="input-appointments" class="w-full p-2 bg-gray-50 border border-gray-200 rounded-lg text-sm outline-none" placeholder="0" oninput="handleMetricChange()"></div>
+                        
+                        <div><label class="text-xs text-slate-500 font-bold mb-1 block">Leads</label><input type="number" id="input-leads" class="w-full p-2 bg-white border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500" placeholder="0" oninput="handleMetricChange()"></div>
+                        <div><label class="text-xs text-slate-500 font-bold mb-1 block">Agendamentos</label><input type="number" id="input-appointments" class="w-full p-2 bg-white border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500" placeholder="0" oninput="handleMetricChange()"></div>
                     </div>
                     <div class="chart-container"><canvas id="performanceChart"></canvas></div>
                 </div>
 
-                <div class="glass-panel p-6 rounded-xl relative overflow-hidden group">
-                    <div class="absolute top-0 right-0 w-24 h-24 bg-teal-50 rounded-bl-full -mr-4 -mt-4 transition-transform group-hover:scale-110"></div>
-                    <h3 class="text-gray-500 text-xs font-bold uppercase tracking-wider mb-1">Foco de Hoje</h3>
-                    <h2 id="mission-title" class="text-2xl font-bold text-teal-700 mb-4">...</h2>
-                    <div class="space-y-3 relative z-10">
-                        <div class="flex items-start gap-3 p-3 bg-gray-50 rounded-lg"><span class="text-xl">🎯</span><div><p class="text-xs font-bold text-gray-600 uppercase">Ação Principal</p><p id="mission-main" class="text-sm text-gray-800 font-medium">Carregando...</p></div></div>
-                        <div class="flex items-start gap-3 p-3 bg-gray-50 rounded-lg"><span class="text-xl">💡</span><div><p class="text-xs font-bold text-gray-600 uppercase">Dica Digital</p><p id="mission-digital" class="text-sm text-gray-800">Carregando...</p></div></div>
+                <!-- CARD 2: MIX DE PRODUTOS (INTEGRADO) -->
+                <div class="glass-panel p-6 rounded-2xl border-l-4 border-violet-500 bg-white mt-6">
+                    <h3 class="text-slate-800 font-bold mb-4 text-lg">Mix de Produtos (Dia)</h3>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div><label class="text-[10px] font-bold text-slate-500 uppercase">Óculos Sol</label><input type="number" id="input-prod-sun" class="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg font-bold text-violet-600 outline-none focus:ring-2 focus:ring-violet-500" placeholder="0" oninput="handleMetricChange()"></div>
+                        <div><label class="text-[10px] font-bold text-slate-500 uppercase">Óculos Grau</label><input type="number" id="input-prod-grade" class="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg font-bold text-violet-600 outline-none focus:ring-2 focus:ring-violet-500" placeholder="0" oninput="handleMetricChange()"></div>
+                        <div><label class="text-[10px] font-bold text-slate-500 uppercase">Lentes Ctt</label><input type="number" id="input-prod-contact" class="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg font-bold text-violet-600 outline-none focus:ring-2 focus:ring-violet-500" placeholder="0" oninput="handleMetricChange()"></div>
+                        <div><label class="text-[10px] font-bold text-slate-500 uppercase">Kit Limpeza</label><input type="number" id="input-prod-kit" class="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg font-bold text-violet-600 outline-none focus:ring-2 focus:ring-violet-500" placeholder="0" oninput="handleMetricChange()"></div>
+                        <div><label class="text-[10px] font-bold text-slate-500 uppercase">Acessórios</label><input type="number" id="input-prod-chain" class="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg font-bold text-violet-600 outline-none focus:ring-2 focus:ring-violet-500" placeholder="0" oninput="handleMetricChange()"></div>
+                        <div><label class="text-[10px] font-bold text-slate-500 uppercase">Infantil</label><input type="number" id="input-prod-kids" class="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg font-bold text-violet-600 outline-none focus:ring-2 focus:ring-violet-500" placeholder="0" oninput="handleMetricChange()"></div>
+                        <div class="col-span-2"><label class="text-[10px] font-bold text-slate-500 uppercase">Seguros / Garantia</label><input type="number" id="input-prod-insurance" class="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg font-bold text-violet-600 outline-none focus:ring-2 focus:ring-violet-500" placeholder="0" oninput="handleMetricChange()"></div>
                     </div>
                 </div>
+
+                <!-- CARD 3: MISSÃO -->
+                <div class="glass-panel p-6 rounded-2xl relative overflow-hidden group bg-white mt-6">
+                    <div class="absolute top-0 right-0 w-32 h-32 bg-gradient-to-bl from-indigo-50 to-white rounded-bl-full -mr-8 -mt-8 transition-transform group-hover:scale-110"></div>
+                    <h3 class="text-indigo-500 text-xs font-bold uppercase tracking-wider mb-2">Foco de Hoje</h3>
+                    <h2 id="mission-title" class="text-2xl font-bold text-slate-800 mb-6 relative z-10">...</h2>
+                    <div class="space-y-4 relative z-10">
+                        <div class="flex items-start gap-4 p-4 bg-slate-50 rounded-xl border border-slate-100"><span class="text-2xl">🎯</span><div><p class="text-xs font-bold text-slate-500 uppercase">Ação Principal</p><p id="mission-main" class="text-sm text-slate-800 font-medium leading-relaxed">Carregando...</p></div></div>
+                        <div class="flex items-start gap-4 p-4 bg-slate-50 rounded-xl border border-slate-100"><span class="text-2xl">💡</span><div><p class="text-xs font-bold text-slate-500 uppercase">Dica Digital</p><p id="mission-digital" class="text-sm text-slate-800 leading-relaxed">Carregando...</p></div></div>
+                    </div>
+                </div>
+
             </div>
         </main>
 
-        <!-- ABA MIX DE PRODUTOS -->
-        <main id="view-products" class="hidden flex-grow max-w-4xl mx-auto px-4 py-6 w-full">
-            <div class="glass-panel p-6 rounded-xl border-l-4 border-indigo-500">
-                <div class="flex justify-between items-end mb-6">
-                    <div>
-                        <h2 class="text-2xl font-bold text-gray-800">Mix de Produtos Vendidos</h2>
-                        <p class="text-sm text-gray-500">Insira a quantidade de peças vendidas hoje.</p>
+        <!-- ABA RESUMO GERAL -->
+        <main id="view-summary" class="hidden flex-grow max-w-4xl mx-auto px-4 py-8 w-full">
+            <div class="bg-white rounded-2xl shadow-sm border border-gray-200 p-8">
+                <div class="mb-8 border-b border-gray-100 pb-6">
+                    <h2 class="text-3xl font-extrabold text-slate-800">Resumo Geral Acumulado</h2>
+                    <p class="text-slate-500 mt-1">Soma total de todo o período salvo.</p>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-8 mb-10">
+                    <div class="bg-emerald-50 rounded-2xl p-6 border border-emerald-100">
+                        <p class="text-sm font-bold text-emerald-600 uppercase tracking-wide mb-2">Total Vendido</p>
+                        <p id="sum-total-sales" class="text-4xl font-extrabold text-emerald-700">R$ 0,00</p>
                     </div>
-                    <div class="text-right">
-                        <span class="text-xs font-bold text-indigo-500 bg-indigo-50 px-3 py-1 rounded-full">Atualizado em tempo real</span>
+                    <div class="bg-rose-50 rounded-2xl p-6 border border-rose-100">
+                        <p class="text-sm font-bold text-rose-600 uppercase tracking-wide mb-2">Total Deixado na Mesa (Financeiro)</p>
+                        <p id="sum-total-lost" class="text-4xl font-extrabold text-rose-700">R$ 0,00</p>
+                    </div>
+                </div>
+                
+                <div class="bg-slate-50 rounded-xl p-6 border border-slate-100 mb-8">
+                    <h3 class="font-bold text-slate-700 mb-4">Detalhamento Financeiro (Perdas Acumuladas)</h3>
+                    <div class="space-y-4">
+                        <div class="flex justify-between items-center border-b border-slate-200 pb-2"><span class="text-sm text-slate-600">Fluxo Perdido</span><span id="sum-lost-flow" class="font-bold text-slate-800">R$ 0,00</span></div>
+                        <div class="flex justify-between items-center border-b border-slate-200 pb-2"><span class="text-sm text-slate-600">2ª Peça Solar (Gap)</span><span id="sum-lost-sun" class="font-bold text-slate-800">R$ 0,00</span></div>
+                        <div class="flex justify-between items-center border-b border-slate-200 pb-2"><span class="text-sm text-slate-600">Acessórios / Kits (Gap)</span><span id="sum-lost-kit" class="font-bold text-slate-800">R$ 0,00</span></div>
+                        <div class="flex justify-between items-center pt-2 border-t border-slate-200"><span class="text-sm text-slate-600 font-bold">Seguros Perdidos (Quantidade)</span><span id="sum-lost-ins" class="font-bold text-indigo-600">0 un</span></div>
                     </div>
                 </div>
 
-                <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
-                    <div class="bg-gray-50 p-4 rounded-xl border border-gray-200"><label class="block text-sm font-bold text-gray-600 mb-2">🕶️ Óculos de Sol</label><input type="number" id="input-prod-sun" class="w-full p-3 bg-white border border-gray-300 rounded-lg text-lg font-bold text-indigo-600 outline-none focus:ring-2 focus:ring-indigo-500" placeholder="0" oninput="handleMetricChange()"></div>
-                    <div class="bg-gray-50 p-4 rounded-xl border border-gray-200"><label class="block text-sm font-bold text-gray-600 mb-2">👓 Óculos de Grau</label><input type="number" id="input-prod-grade" class="w-full p-3 bg-white border border-gray-300 rounded-lg text-lg font-bold text-indigo-600 outline-none focus:ring-2 focus:ring-indigo-500" placeholder="0" oninput="handleMetricChange()"></div>
-                    <div class="bg-gray-50 p-4 rounded-xl border border-gray-200"><label class="block text-sm font-bold text-gray-600 mb-2">👁️ Lentes de Contato</label><input type="number" id="input-prod-contact" class="w-full p-3 bg-white border border-gray-300 rounded-lg text-lg font-bold text-indigo-600 outline-none focus:ring-2 focus:ring-indigo-500" placeholder="0" oninput="handleMetricChange()"></div>
-                    <div class="bg-gray-50 p-4 rounded-xl border border-gray-200"><label class="block text-sm font-bold text-gray-600 mb-2">💧 Kit Limpeza</label><input type="number" id="input-prod-kit" class="w-full p-3 bg-white border border-gray-300 rounded-lg text-lg font-bold text-indigo-600 outline-none focus:ring-2 focus:ring-indigo-500" placeholder="0" oninput="handleMetricChange()"></div>
-                    <div class="bg-gray-50 p-4 rounded-xl border border-gray-200"><label class="block text-sm font-bold text-gray-600 mb-2">⛓️ Correntes / Acessórios</label><input type="number" id="input-prod-chain" class="w-full p-3 bg-white border border-gray-300 rounded-lg text-lg font-bold text-indigo-600 outline-none focus:ring-2 focus:ring-indigo-500" placeholder="0" oninput="handleMetricChange()"></div>
-                    <div class="bg-gray-50 p-4 rounded-xl border border-gray-200"><label class="block text-sm font-bold text-gray-600 mb-2">🧸 Linha Infantil</label><input type="number" id="input-prod-kids" class="w-full p-3 bg-white border border-gray-300 rounded-lg text-lg font-bold text-indigo-600 outline-none focus:ring-2 focus:ring-indigo-500" placeholder="0" oninput="handleMetricChange()"></div>
-                    <div class="bg-gray-50 p-4 rounded-xl border border-gray-200 sm:col-span-3"><label class="block text-sm font-bold text-gray-600 mb-2">🛡️ Seguros / Garantia Estendida</label><input type="number" id="input-prod-insurance" class="w-full p-3 bg-white border border-gray-300 rounded-lg text-lg font-bold text-indigo-600 outline-none focus:ring-2 focus:ring-indigo-500" placeholder="0" oninput="handleMetricChange()"></div>
-                </div>
-
-                <!-- ÁREA: POTENCIAL DE VENDAS (COM SEGUROS) -->
-                <div class="mt-8 bg-indigo-50 border border-indigo-100 rounded-xl p-6">
-                    <h3 class="text-lg font-bold text-indigo-900 mb-4 flex items-center gap-2"><span>🚀</span> Potencial de Vendas (Oportunidades)</h3>
-                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                        <!-- Solar -->
-                        <div class="bg-white p-4 rounded-lg shadow-sm border border-indigo-100">
-                            <p class="text-xs font-bold text-gray-500 uppercase">2ª Peça (Solar)</p>
-                            <p class="text-sm text-gray-600 mt-1">Regra: 1 Grau = 1 Sol</p>
-                            <div class="mt-3 flex justify-between items-end">
-                                <div><span class="text-xs text-gray-400">Meta Ideal</span><p id="pot-sun-target" class="text-xl font-bold text-gray-800">0</p></div>
-                                <div class="text-right"><span class="text-xs text-gray-400">Realizado</span><p id="pot-sun-actual" class="text-xl font-bold text-indigo-600">0</p></div>
+                <!-- CARDS DE POTENCIAL -->
+                <div class="bg-gradient-to-br from-violet-50 to-indigo-50 border border-violet-100 rounded-2xl p-8">
+                    <h3 class="text-xl font-bold text-indigo-900 mb-6 flex items-center gap-3"><span class="bg-indigo-600 text-white rounded-lg p-1">🚀</span> Potencial de Vendas (Acumulado)</h3>
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                        <!-- Fluxo -->
+                        <div class="bg-white p-5 rounded-xl shadow-sm border border-red-50 relative">
+                            <p class="text-xs font-bold text-slate-400 uppercase tracking-wide">Fluxo Perdido</p>
+                            <div class="flex justify-between items-end border-b border-slate-100 pb-3 mb-3">
+                                <div><span class="text-[10px] font-bold text-slate-400 uppercase">Qtd Total</span><p id="pot-flow-lost" class="text-xl font-bold text-slate-700">0</p></div>
+                                <div class="text-right"><span class="text-[10px] font-bold text-slate-400 uppercase">Valor</span><p id="pot-flow-revenue" class="text-xl font-bold text-red-500">R$ 0</p></div>
                             </div>
-                            <div class="mt-3 pt-3 border-t border-gray-100"><p id="pot-sun-gap" class="text-xs font-bold text-orange-500">Sem dados</p></div>
+                        </div>
+                        <!-- Solar -->
+                        <div class="bg-white p-5 rounded-xl shadow-sm border border-indigo-50">
+                            <p class="text-xs font-bold text-slate-400 uppercase tracking-wide">Solar (Gap)</p>
+                            <div class="flex justify-between items-end border-b border-slate-100 pb-3 mb-3">
+                                <div><span class="text-[10px] font-bold text-slate-400 uppercase">Meta Total</span><p id="pot-sun-target" class="text-xl font-bold text-slate-700">0</p></div>
+                                <div class="text-right"><span class="text-[10px] font-bold text-slate-400 uppercase">Real</span><p id="pot-sun-actual" class="text-xl font-bold text-indigo-600">0</p></div>
+                            </div>
+                            <div><p id="pot-sun-gap-qtd" class="text-sm font-bold text-slate-400">Gap: 0</p><p id="pot-sun-revenue" class="text-xs text-red-400">R$ 0</p></div>
                         </div>
                         <!-- Kits -->
-                        <div class="bg-white p-4 rounded-lg shadow-sm border border-indigo-100">
-                            <p class="text-xs font-bold text-gray-500 uppercase">Acessórios (Kits)</p>
-                            <p class="text-sm text-gray-600 mt-1">Regra: 1 Óculos = 1 Kit</p>
-                            <div class="mt-3 flex justify-between items-end">
-                                <div><span class="text-xs text-gray-400">Meta Ideal</span><p id="pot-kit-target" class="text-xl font-bold text-gray-800">0</p></div>
-                                <div class="text-right"><span class="text-xs text-gray-400">Realizado</span><p id="pot-kit-actual" class="text-xl font-bold text-indigo-600">0</p></div>
+                        <div class="bg-white p-5 rounded-xl shadow-sm border border-indigo-50">
+                            <p class="text-xs font-bold text-slate-400 uppercase tracking-wide">Kits (Gap)</p>
+                            <div class="flex justify-between items-end border-b border-slate-100 pb-3 mb-3">
+                                <div><span class="text-[10px] font-bold text-slate-400 uppercase">Meta Total</span><p id="pot-kit-target" class="text-xl font-bold text-slate-700">0</p></div>
+                                <div class="text-right"><span class="text-[10px] font-bold text-slate-400 uppercase">Real</span><p id="pot-kit-actual" class="text-xl font-bold text-indigo-600">0</p></div>
                             </div>
-                            <div class="mt-3 pt-3 border-t border-gray-100"><p id="pot-kit-gap" class="text-xs font-bold text-orange-500">Sem dados</p></div>
+                            <div><p id="pot-kit-gap-qtd" class="text-sm font-bold text-slate-400">Gap: 0</p><p id="pot-kit-revenue" class="text-xs text-red-400">R$ 0</p></div>
                         </div>
                         <!-- Seguros -->
-                        <div class="bg-white p-4 rounded-lg shadow-sm border border-indigo-100">
-                            <p class="text-xs font-bold text-gray-500 uppercase">Seguros</p>
-                            <p class="text-sm text-gray-600 mt-1">Regra: 1 Óculos = 1 Seguro</p>
-                            <div class="mt-3 flex justify-between items-end">
-                                <div><span class="text-xs text-gray-400">Meta Ideal</span><p id="pot-ins-target" class="text-xl font-bold text-gray-800">0</p></div>
-                                <div class="text-right"><span class="text-xs text-gray-400">Realizado</span><p id="pot-ins-actual" class="text-xl font-bold text-indigo-600">0</p></div>
+                        <div class="bg-white p-5 rounded-xl shadow-sm border border-indigo-50">
+                            <p class="text-xs font-bold text-slate-400 uppercase tracking-wide">Seguros (Gap)</p>
+                            <div class="flex justify-between items-end border-b border-slate-100 pb-3 mb-3">
+                                <div><span class="text-[10px] font-bold text-slate-400 uppercase">Meta Total</span><p id="pot-ins-target" class="text-xl font-bold text-slate-700">0</p></div>
+                                <div class="text-right"><span class="text-[10px] font-bold text-slate-400 uppercase">Real</span><p id="pot-ins-actual" class="text-xl font-bold text-indigo-600">0</p></div>
                             </div>
-                            <div class="mt-3 pt-3 border-t border-gray-100"><p id="pot-ins-gap" class="text-xs font-bold text-orange-500">Sem dados</p></div>
+                            <div><p id="pot-ins-gap-qtd" class="text-sm font-bold text-slate-400">Gap: 0</p><p class="text-xs text-slate-400">Sem valor financeiro</p></div>
                         </div>
                     </div>
                 </div>
@@ -382,88 +476,50 @@
         </main>
 
         <!-- ABA MATERIAIS -->
-        <main id="view-materials" class="hidden flex-grow max-w-4xl mx-auto px-4 py-6 w-full">
-            <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-                <div class="p-6 bg-teal-50 border-b border-teal-100">
-                    <h2 class="text-2xl font-bold text-teal-800">📚 50 Scripts para Vender Mais</h2>
-                    <p class="text-teal-600 mt-1">Materiais de apoio.</p>
+        <main id="view-materials" class="hidden flex-grow max-w-4xl mx-auto px-4 py-8 w-full">
+            <div class="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
+                <div class="p-8 bg-gradient-to-r from-teal-50 to-emerald-50 border-b border-teal-100">
+                    <h2 class="text-3xl font-extrabold text-teal-900 tracking-tight">📚 50 Scripts para Vender Mais</h2>
                 </div>
                 <div class="divide-y divide-gray-100">
-                    <!-- Conteúdo Scripts (Compactado para legibilidade) -->
-                    <details class="group p-4 open:bg-gray-50 transition-all cursor-pointer">
-                        <summary class="flex justify-between items-center font-bold text-gray-700"><span>👋 Primeiro Contato</span><span class="text-teal-500 group-open:rotate-180 transition-transform">▼</span></summary>
-                        <div class="mt-4 text-sm text-gray-600 space-y-4 pl-4 border-l-2 border-teal-300"><p>"[Nome], meu nome é [Seu Nome]. Descobri que você tem interesse em [Área]..."</p></div>
-                    </details>
-                    <details class="group p-4 open:bg-gray-50 transition-all cursor-pointer">
-                        <summary class="flex justify-between items-center font-bold text-gray-700"><span>💰 Reativar Cliente (Preço)</span><span class="text-teal-500 group-open:rotate-180 transition-transform">▼</span></summary>
-                        <div class="mt-4 text-sm text-gray-600 space-y-4 pl-4 border-l-2 border-teal-300"><p>"Olá [Nome], notei que perguntou sobre o preço. Nosso diferencial é..."</p></div>
-                    </details>
-                    <details class="group p-4 open:bg-gray-50 transition-all cursor-pointer">
-                        <summary class="flex justify-between items-center font-bold text-gray-700"><span>📞 Sem Resposta (Várias Tentativas)</span><span class="text-teal-500 group-open:rotate-180 transition-transform">▼</span></summary>
-                        <div class="mt-4 text-sm text-gray-600 space-y-4 pl-4 border-l-2 border-teal-300"><p>"Imagino que esteja ocupado. Se houver um momento oportuno..."</p></div>
-                    </details>
-                    <details class="group p-4 open:bg-gray-50 transition-all cursor-pointer">
-                        <summary class="flex justify-between items-center font-bold text-gray-700"><span>🔍 Identificação de Necessidades</span><span class="text-teal-500 group-open:rotate-180 transition-transform">▼</span></summary>
-                        <div class="mt-4 text-sm text-gray-600 space-y-4 pl-4 border-l-2 border-teal-300"><p>"Poderia me dar uma descrição mais detalhada do que busca?"</p></div>
-                    </details>
-                    <details class="group p-4 open:bg-gray-50 transition-all cursor-pointer">
-                        <summary class="flex justify-between items-center font-bold text-gray-700"><span>💸 Contorno de Objeção: Preço</span><span class="text-teal-500 group-open:rotate-180 transition-transform">▼</span></summary>
-                        <div class="mt-4 text-sm text-gray-600 space-y-4 pl-4 border-l-2 border-teal-300"><p>"Entendo sua preocupação. No entanto, nosso produto oferece..."</p></div>
-                    </details>
-                    <details class="group p-4 open:bg-gray-50 transition-all cursor-pointer">
-                        <summary class="flex justify-between items-center font-bold text-gray-700"><span>🤔 "Vou Pensar"</span><span class="text-teal-500 group-open:rotate-180 transition-transform">▼</span></summary>
-                        <div class="mt-4 text-sm text-gray-600 space-y-4 pl-4 border-l-2 border-teal-300"><p>"Entendo. Há alguma dúvida específica que eu possa esclarecer agora?"</p></div>
-                    </details>
-                    <details class="group p-4 open:bg-gray-50 transition-all cursor-pointer">
-                        <summary class="flex justify-between items-center font-bold text-gray-700"><span>🏁 Fechamento de Venda</span><span class="text-teal-500 group-open:rotate-180 transition-transform">▼</span></summary>
-                        <div class="mt-4 text-sm text-gray-600 space-y-4 pl-4 border-l-2 border-teal-300"><p>"Vamos começar? Qual forma de pagamento prefere?"</p></div>
-                    </details>
-                    <details class="group p-4 open:bg-gray-50 transition-all cursor-pointer">
-                        <summary class="flex justify-between items-center font-bold text-gray-700"><span>🎁 Pós-Venda</span><span class="text-teal-500 group-open:rotate-180 transition-transform">▼</span></summary>
-                        <div class="mt-4 text-sm text-gray-600 space-y-4 pl-4 border-l-2 border-teal-300"><p>"Obrigado pela compra! Lembre-se de usar o kit de limpeza..."</p></div>
-                    </details>
+                    <details class="group p-6 open:bg-slate-50 transition-all cursor-pointer"><summary class="flex justify-between items-center font-bold text-slate-700 text-lg"><span>👋 Primeiro Contato</span><span class="text-teal-500 group-open:rotate-180 transition-transform">▼</span></summary><div class="mt-6 text-gray-600 space-y-6 pl-4 border-l-4 border-teal-400">
+                         <p class="italic mb-2">"Olá [Nome], meu nome é [Seu Nome], da [Empresa]. Vi que tem interesse em [Área]..."</p>
+                         <p class="italic">"Em apenas 2 minutos posso te mostrar como podemos ajudar?"</p>
+                    </div></details>
+                    <details class="group p-6 open:bg-slate-50 transition-all cursor-pointer"><summary class="flex justify-between items-center font-bold text-slate-700 text-lg"><span>💰 Objeção de Preço</span><span class="text-teal-500 group-open:rotate-180 transition-transform">▼</span></summary><div class="mt-6 text-gray-600 space-y-6 pl-4 border-l-4 border-teal-400">
+                        <p class="italic mb-2">"Entendo sua preocupação. Mas nosso produto oferece [Benefício]..."</p>
+                        <p class="italic">"Este valor está fora do orçamento ou podemos negociar a forma de pagamento?"</p>
+                    </div></details>
+                     <details class="group p-6 open:bg-slate-50 transition-all cursor-pointer"><summary class="flex justify-between items-center font-bold text-slate-700 text-lg"><span>🤔 "Vou Pensar"</span><span class="text-teal-500 group-open:rotate-180 transition-transform">▼</span></summary><div class="mt-6 text-gray-600 space-y-6 pl-4 border-l-4 border-teal-400"><p class="italic">"Entendo. Há alguma dúvida específica que eu possa esclarecer agora?"</p></div></details>
+                     <details class="group p-6 open:bg-slate-50 transition-all cursor-pointer"><summary class="flex justify-between items-center font-bold text-slate-700 text-lg"><span>🤝 Fechamento</span><span class="text-teal-500 group-open:rotate-180 transition-transform">▼</span></summary><div class="mt-6 text-gray-600 space-y-6 pl-4 border-l-4 border-teal-400"><p class="italic">"Vamos começar? Qual forma de pagamento prefere?"</p></div></details>
+                     <details class="group p-6 open:bg-slate-50 transition-all cursor-pointer"><summary class="flex justify-between items-center font-bold text-slate-700 text-lg"><span>🎁 Pós-Venda</span><span class="text-teal-500 group-open:rotate-180 transition-transform">▼</span></summary><div class="mt-6 text-gray-600 space-y-6 pl-4 border-l-4 border-teal-400"><p class="italic">"Obrigado pela compra! Lembre-se: use apenas o spray e flanela para limpar."</p></div></details>
                 </div>
             </div>
         </main>
     </div>
 
-    <!-- LÓGICA DE NAVEGAÇÃO -->
+    <!-- LOGICA JS -->
     <script>
-        function switchTab(tabName) {
-            ['view-dashboard', 'view-products', 'view-materials'].forEach(id => document.getElementById(id).classList.add('hidden'));
-            ['tab-dashboard', 'tab-products', 'tab-materials'].forEach(id => {
-                document.getElementById(id).className = "flex-1 px-4 py-2 rounded-lg text-sm font-medium text-gray-500 hover:text-teal-700 transition-colors whitespace-nowrap";
-            });
+        function switchTab(t){['view-dashboard','view-materials','view-summary'].forEach(i=>document.getElementById(i).classList.add('hidden'));['tab-dashboard','tab-materials','tab-summary'].forEach(i=>document.getElementById(i).className="flex-1 px-4 py-2 rounded-lg text-sm font-medium text-slate-500 hover:text-indigo-600 transition-all whitespace-nowrap");document.getElementById(`view-${t}`).classList.remove('hidden');document.getElementById(`tab-${t}`).className="flex-1 px-4 py-2 rounded-lg text-sm font-bold bg-white shadow-sm text-indigo-700 transition-all whitespace-nowrap";if(t==='summary')window.calculateSummary()}
+        
+        async function handleEnter(e){e.preventDefault();const n=document.getElementById('access-name').value.trim();const s=document.getElementById('access-store').value.trim();if(!n||!s){alert("Preencha tudo.");return}if(window.authReady===false&&confirm("Ainda conectando. Entrar offline?")===false)return;window.consultantName=n;window.storeName=s;localStorage.setItem('optical_consultant_name',n);localStorage.setItem('optical_store_name',s);document.getElementById('login-view').classList.add('hidden');document.getElementById('dashboard-view').classList.remove('hidden');document.getElementById('header-name').innerHTML=`${n} <span class="text-xs font-normal text-slate-400">| ${s}</span>`;await window.loadDayData(window.currentDayIndex)}
+        
+        function logout(){if(confirm("Sair?"))location.reload()}
 
-            document.getElementById(`view-${tabName}`).classList.remove('hidden');
-            document.getElementById(`tab-${tabName}`).className = "flex-1 px-4 py-2 rounded-lg text-sm font-bold bg-white shadow text-teal-700 transition-colors whitespace-nowrap";
-        }
+        // BOTOES DIAS
+        function renderDays(){const c=document.getElementById('days-container');c.innerHTML='';['Seg','Ter','Qua','Qui','Sex','Sáb'].forEach((d,i)=>{c.innerHTML+=`<button onclick="setDay(${i})" class="day-btn flex-1 min-w-[3rem] px-3 py-2.5 rounded-xl text-sm font-semibold transition-all" data-day="${i}">${d}</button>`})}
+        
+        window.setDay=async(i)=>{window.currentDayIndex=i;document.querySelectorAll('.day-btn').forEach(b=>{const a=parseInt(b.dataset.day)===i;b.className=`day-btn flex-1 min-w-[3rem] px-3 py-2.5 rounded-xl text-sm font-semibold transition-all ${a?'bg-indigo-600 text-white shadow-lg transform scale-105':'text-slate-500 hover:bg-slate-50'}`});
+        // Atualiza missão
+        const m = missions[i % 6];
+        document.getElementById('mission-title').innerText = m.title;
+        document.getElementById('mission-main').innerText = m.main;
+        document.getElementById('mission-digital').innerText = m.dig;
+        
+        renderTimeline(getDailySchedule(i));
+        await window.loadDayData(i)}
 
-        // --- LÓGICA DE ENTRADA ---
-        window.handleEnter = async function(e) {
-            e.preventDefault();
-            const nameInput = document.getElementById('access-name').value.trim();
-            const storeInput = document.getElementById('access-store').value.trim();
-            if (!nameInput || !storeInput) { alert("Preencha nome e loja."); return; }
-            window.consultantName = nameInput;
-            window.storeName = storeInput;
-            localStorage.setItem('optical_consultant_name', nameInput);
-            localStorage.setItem('optical_store_name', storeInput);
-            document.getElementById('login-view').classList.add('hidden');
-            document.getElementById('dashboard-view').classList.remove('hidden');
-            document.getElementById('header-name').innerHTML = `${nameInput} <span class="text-xs font-normal text-gray-400 block sm:inline">| ${storeInput}</span>`;
-            window.loadDayData(window.currentDayIndex);
-        };
-
-        window.logout = function() {
-            if(confirm("Deseja sair?")) {
-                localStorage.removeItem('optical_consultant_name');
-                localStorage.removeItem('optical_store_name');
-                location.reload();
-            }
-        };
-
-        // --- CRONOGRAMA ---
+        // CRONOGRAMA & MISSÕES
         const trainingTopics = [
             { title: "Abertura da Venda", task: "Técnica de Abordagem Não-Invasiva", desc: "Ler script de saudação e praticar sorriso." },
             { title: "Sondagem", task: "Perguntas Abertas vs Fechadas", desc: "Listar 3 perguntas para descobrir a dor do cliente." },
@@ -496,147 +552,90 @@
             { day: "Sábado", title: "Vendas", main: "Movimento Loja.", dig: "Story: Bastidores" },
         ];
 
-        window.currentDayIndex = 0;
-
-        document.addEventListener('DOMContentLoaded', () => {
-            renderTimeline(getDailySchedule(0));
-            initChart();
-            const savedName = localStorage.getItem('optical_consultant_name');
-            const savedStore = localStorage.getItem('optical_store_name');
-            if(savedName) document.getElementById('access-name').value = savedName;
-            if(savedStore) document.getElementById('access-store').value = savedStore;
-        });
-
-        function renderTimeline(scheduleData) {
-            const container = document.getElementById('timeline-container');
-            container.innerHTML = '<div class="timeline-line"></div>';
+        function renderTimeline(scheduleData){
+            const c=document.getElementById('timeline-container');
+            if(!scheduleData) scheduleData = getDailySchedule(0);
+            c.innerHTML='<div class="timeline-line"></div>';
             scheduleData.forEach((block, idx) => {
-                const isBreak = block.isBreak ? 'bg-gray-100 opacity-70' : 'bg-white';
-                const isTraining = block.isTraining ? 'border-l-4 border-indigo-500 bg-indigo-50' : 'border-gray-200';
-                let iconColor = block.isTraining ? 'bg-indigo-500' : 'bg-teal-500';
-                let html = `
-                <div class="relative z-10 mb-6 pl-6">
-                    <div class="absolute left-0 w-3 h-3 ${iconColor} rounded-full border-2 border-white shadow mt-1.5" style="margin-left: 0.8rem;"></div>
-                    <div class="${isBreak} ${isTraining} rounded-lg border p-4 shadow-sm hover:shadow-md transition-shadow">
-                        <div class="flex justify-between items-center mb-2">
-                            <span class="text-xs font-bold text-teal-600 bg-white/50 px-2 py-1 rounded">${block.time}</span>
-                            <h4 class="font-bold text-gray-700">${block.title}</h4>
-                        </div>`;
-                if (!block.isBreak && block.tasks) {
-                    html += `<ul class="space-y-2">`;
+                const isBreak = block.isBreak ? 'bg-slate-100 opacity-70' : 'bg-white';
+                const isTraining = block.isTraining ? 'border-l-4 border-violet-500 bg-violet-50' : 'border-slate-100';
+                let iconColor = block.isTraining ? 'bg-violet-500' : 'bg-indigo-500';
+                let html = `<div class="relative z-10 mb-6 pl-6"><div class="absolute left-0 w-3 h-3 ${iconColor} rounded-full border-2 border-white shadow mt-1.5" style="margin-left: 0.8rem;"></div><div class="${isBreak} ${isTraining} rounded-2xl border p-5 shadow-sm"><div class="flex justify-between items-center mb-3"><span class="text-xs font-bold text-indigo-600 bg-white px-2.5 py-1 rounded-lg border border-slate-100">${block.time}</span><h4 class="font-bold text-slate-700">${block.title}</h4></div>`;
+                
+                if (block.tasks) {
+                    html += `<ul class="space-y-3">`;
                     block.tasks.forEach((task, tIdx) => {
-                        html += `<li class="flex items-start gap-2"><input type="checkbox" id="task-${idx}-${tIdx}" class="checkbox-custom mt-1 shrink-0" onclick="handleTaskClick(event)"><span class="text-sm text-gray-600 leading-snug">${task}</span></li>`;
+                         html += `<li class="flex items-start gap-3"><input type="checkbox" id="task-${idx}-${tIdx}" class="checkbox-custom mt-0.5 shrink-0" onclick="handleTaskClick(event)"><span class="text-sm text-slate-600 leading-snug font-medium">${task}</span></li>`;
                     });
                     html += `</ul>`;
-                } else if (block.isBreak) { html += `<p class="text-xs text-gray-400 italic">Pausa.</p>`; }
-                html += `</div></div>`;
-                container.insertAdjacentHTML('beforeend', html);
-            });
-        }
-
-        window.setDay = async function(dayIndex) {
-            window.currentDayIndex = dayIndex;
-            document.querySelectorAll('.day-btn').forEach(btn => {
-                const isActive = parseInt(btn.dataset.day) === dayIndex;
-                btn.className = `day-btn flex-1 min-w-[3rem] px-3 py-2 rounded-lg text-sm font-medium transition-colors ${isActive ? 'bg-teal-600 text-white shadow-md' : 'text-gray-500 hover:bg-white'}`;
-            });
-            const m = missions[dayIndex];
-            document.getElementById('mission-title').innerText = m.title;
-            document.getElementById('mission-main').innerText = m.main;
-            document.getElementById('mission-digital').innerText = m.dig;
-            renderTimeline(getDailySchedule(dayIndex));
-            await window.loadDayData(dayIndex);
-        };
-
-        function calculateSmartGoal(goal, sales) {
-            const workingDaysLeft = 20; 
-            const remaining = goal - sales;
-            const dailyNeeded = workingDaysLeft > 0 ? (remaining / workingDaysLeft) : 0;
-            document.getElementById('days-left-display').innerText = `${workingDaysLeft} dias úteis (Base)`;
-            document.getElementById('remaining-goal-display').innerText = `R$ ${Math.max(0, remaining).toLocaleString('pt-BR', {minimumFractionDigits: 2})}`;
-            document.getElementById('daily-needed-display').innerText = `R$ ${Math.max(0, dailyNeeded).toLocaleString('pt-BR', {minimumFractionDigits: 2})}`;
-        }
-
-        function updatePotentials() {
-            const grade = parseInt(document.getElementById('input-prod-grade').value) || 0;
-            const sun = parseInt(document.getElementById('input-prod-sun').value) || 0;
-            const kit = parseInt(document.getElementById('input-prod-kit').value) || 0;
-            const insurance = parseInt(document.getElementById('input-prod-insurance').value) || 0;
-
-            const targetSun = grade;
-            const gapSun = Math.max(0, targetSun - sun);
-            document.getElementById('pot-sun-target').innerText = targetSun;
-            document.getElementById('pot-sun-actual').innerText = sun;
-            const sunGapEl = document.getElementById('pot-sun-gap');
-            if(grade > 0 && gapSun > 0) { sunGapEl.innerText = `⚠️ Perdeu venda de ${gapSun} peças`; sunGapEl.className = "text-xs font-bold text-red-500"; }
-            else if (grade > 0 && gapSun === 0) { sunGapEl.innerText = `✅ Meta atingida!`; sunGapEl.className = "text-xs font-bold text-green-500"; }
-            else { sunGapEl.innerText = "Sem dados de grau"; sunGapEl.className = "text-xs text-gray-400"; }
-
-            const totalGlasses = grade + sun;
-            const targetKit = totalGlasses;
-            const gapKit = Math.max(0, targetKit - kit);
-            document.getElementById('pot-kit-target').innerText = targetKit;
-            document.getElementById('pot-kit-actual').innerText = kit;
-            const kitGapEl = document.getElementById('pot-kit-gap');
-            if(totalGlasses > 0 && gapKit > 0) { kitGapEl.innerText = `⚠️ Perdeu venda de ${gapKit} kits`; kitGapEl.className = "text-xs font-bold text-red-500"; }
-            else if (totalGlasses > 0 && gapKit === 0) { kitGapEl.innerText = `✅ Meta atingida!`; kitGapEl.className = "text-xs font-bold text-green-500"; }
-            else { kitGapEl.innerText = "Sem vendas de óculos"; kitGapEl.className = "text-xs text-gray-400"; }
-
-            // Lógica Seguros
-            const targetIns = totalGlasses;
-            const gapIns = Math.max(0, targetIns - insurance);
-            document.getElementById('pot-ins-target').innerText = targetIns;
-            document.getElementById('pot-ins-actual').innerText = insurance;
-            const insGapEl = document.getElementById('pot-ins-gap');
-            if(totalGlasses > 0 && gapIns > 0) { insGapEl.innerText = `⚠️ Perdeu venda de ${gapIns} seguros`; insGapEl.className = "text-xs font-bold text-red-500"; }
-            else if (totalGlasses > 0 && gapIns === 0) { insGapEl.innerText = `✅ Meta atingida!`; insGapEl.className = "text-xs font-bold text-green-500"; }
-            else { insGapEl.innerText = "Sem vendas de óculos"; insGapEl.className = "text-xs text-gray-400"; }
-        }
-
-        window.loadDayData = async function(dayIndex) {
-            document.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.checked = false);
-            const inputs = ['input-sales', 'input-leads', 'input-appointments', 'input-flow-entries', 'input-flow-conversions',
-                            'input-prod-sun', 'input-prod-grade', 'input-prod-contact', 'input-prod-kit', 'input-prod-chain', 'input-prod-kids', 'input-prod-insurance'];
-            inputs.forEach(id => document.getElementById(id).value = '');
-            if(!document.getElementById('input-goal').value) document.getElementById('input-goal').value = 40000;
-            document.getElementById('conversion-display').innerText = "0%";
-            updateChart();
-
-            const data = await window.fetchData(dayIndex);
-            if(data) {
-                if(data.sales) document.getElementById('input-sales').value = data.sales;
-                if(data.goal) document.getElementById('input-goal').value = data.goal;
-                if(data.leads) document.getElementById('input-leads').value = data.leads;
-                if(data.appointments) document.getElementById('input-appointments').value = data.appointments;
-                if(data.flowEntries) document.getElementById('input-flow-entries').value = data.flowEntries;
-                if(data.flowConversions) document.getElementById('input-flow-conversions').value = data.flowConversions;
-                
-                if(data.prodSun) document.getElementById('input-prod-sun').value = data.prodSun;
-                if(data.prodGrade) document.getElementById('input-prod-grade').value = data.prodGrade;
-                if(data.prodContact) document.getElementById('input-prod-contact').value = data.prodContact;
-                if(data.prodKit) document.getElementById('input-prod-kit').value = data.prodKit;
-                if(data.prodChain) document.getElementById('input-prod-chain').value = data.prodChain;
-                if(data.prodKids) document.getElementById('input-prod-kids').value = data.prodKids;
-                if(data.prodInsurance) document.getElementById('input-prod-insurance').value = data.prodInsurance;
-
-                const ent = parseInt(data.flowEntries) || 0;
-                const conv = parseInt(data.flowConversions) || 0;
-                if(ent > 0) document.getElementById('conversion-display').innerText = ((conv/ent)*100).toFixed(1) + "%";
-
-                if(data.tasks) {
-                    Object.keys(data.tasks).forEach(key => {
-                        const cb = document.getElementById(`task-${key}`);
-                        if(cb) cb.checked = data.tasks[key];
-                    });
                 }
-                updateChart();
-            }
-            const g = parseFloat(document.getElementById('input-goal').value) || 40000;
-            const s = parseFloat(document.getElementById('input-sales').value) || 0;
-            calculateSmartGoal(g, s);
-            updatePotentials();
+                html += `</div></div>`;
+                c.insertAdjacentHTML('beforeend', html);
+            });
+        }
+
+        // CALCULOS DE NEGOCIO
+        window.handleMetricChange = function() {
+            const grade = parseInt(document.getElementById('input-prod-grade').value)||0;
+            const sun = parseInt(document.getElementById('input-prod-sun').value)||0;
+            const kit = parseInt(document.getElementById('input-prod-kit').value)||0;
+            const ins = parseInt(document.getElementById('input-prod-insurance').value)||0;
+            
+            // Fluxo
+            const ent = parseInt(document.getElementById('input-flow-entries').value)||0;
+            const conv = parseInt(document.getElementById('input-flow-conversions').value)||0;
+            if(ent>0) document.getElementById('conversion-display').innerText=((conv/ent)*100).toFixed(1)+'%';
+
+            // Meta Inteligente
+            const g = parseFloat(document.getElementById('input-goal').value)||0;
+            const s = parseFloat(document.getElementById('input-sales').value)||0;
+            const d = parseInt(document.getElementById('input-days-left').value)||20;
+            const rem = Math.max(0, g-s);
+            document.getElementById('remaining-goal-display').innerText=`R$ ${rem.toLocaleString()}`;
+            document.getElementById('daily-needed-display').innerText=`R$ ${d>0?(rem/d).toLocaleString():0}`;
+
+            // Chart
+            chart.data.datasets[0].data = [s, g];
+            chart.update();
+
+            // Salvar
+            clearTimeout(window.saveTimer);
+            window.saveTimer = setTimeout(() => {
+                const data = {
+                    sales: s, goal: g, daysLeft: d,
+                    leads: document.getElementById('input-leads').value,
+                    appointments: document.getElementById('input-appointments').value,
+                    flowEntries: ent, flowConversions: conv,
+                    prodSun: sun, prodGrade: grade, prodContact: document.getElementById('input-prod-contact').value,
+                    prodKit: kit, prodChain: document.getElementById('input-prod-chain').value,
+                    prodKids: document.getElementById('input-prod-kids').value,
+                    prodInsurance: ins
+                };
+                window.saveData(data);
+            }, 1000);
         };
 
+        // CARREGAR DADOS
+        window.loadDayData = async (i) => {
+            const data = await window.fetchData(i);
+            const ids = ['input-sales','input-goal','input-days-left','input-leads','input-appointments','input-flow-entries','input-flow-conversions',
+                        'input-prod-sun','input-prod-grade','input-prod-contact','input-prod-kit','input-prod-chain','input-prod-kids','input-prod-insurance'];
+            ids.forEach(k => document.getElementById(k).value = data ? (data[k.replace('input-','')] || (k==='input-goal'?40000:0)) : (k==='input-goal'?40000:0));
+            if(!data) document.getElementById('input-days-left').value = 20;
+            
+            // Restore Checkboxes
+            if(data && data.tasks) {
+                 Object.keys(data.tasks).forEach(key => {
+                    const cb = document.getElementById(`task-${key}`);
+                    if(cb) cb.checked = data.tasks[key];
+                 });
+            } else {
+                 document.querySelectorAll('.checkbox-custom').forEach(c => c.checked = false);
+            }
+
+            window.handleMetricChange();
+        };
+        
         window.handleTaskClick = function(e) {
             const allTasks = {};
             document.querySelectorAll('.checkbox-custom').forEach(cb => {
@@ -646,58 +645,108 @@
             window.saveData({ tasks: allTasks });
         };
 
-        let debounceTimer;
-        window.handleMetricChange = function() {
-            const entries = parseInt(document.getElementById('input-flow-entries').value) || 0;
-            const conversions = parseInt(document.getElementById('input-flow-conversions').value) || 0;
-            const rate = entries > 0 ? ((conversions / entries) * 100).toFixed(1) : 0;
-            document.getElementById('conversion-display').innerText = rate + "%";
-
-            const goal = parseFloat(document.getElementById('input-goal').value) || 0;
-            const sales = parseFloat(document.getElementById('input-sales').value) || 0;
-            calculateSmartGoal(goal, sales);
-            updatePotentials();
-
-            updateChart();
-            clearTimeout(debounceTimer);
-            debounceTimer = setTimeout(() => {
-                window.saveData({
-                    sales: sales,
-                    goal: goal,
-                    leads: document.getElementById('input-leads').value,
-                    appointments: document.getElementById('input-appointments').value,
-                    flowEntries: entries,
-                    flowConversions: conversions,
-                    prodSun: document.getElementById('input-prod-sun').value,
-                    prodGrade: document.getElementById('input-prod-grade').value,
-                    prodContact: document.getElementById('input-prod-contact').value,
-                    prodKit: document.getElementById('input-prod-kit').value,
-                    prodChain: document.getElementById('input-prod-chain').value,
-                    prodKids: document.getElementById('input-prod-kids').value,
-                    prodInsurance: document.getElementById('input-prod-insurance').value
-                });
-            }, 1000);
-        };
-
+        // INICIO
         let chart;
-        function initChart() {
+        document.addEventListener('DOMContentLoaded', () => {
+            renderDays();
+            // Start with today's schedule
+            renderTimeline(getDailySchedule(0));
             const ctx = document.getElementById('performanceChart').getContext('2d');
-            chart = new Chart(ctx, {
-                type: 'bar',
-                data: {
-                    labels: ['Realizado', 'Meta'],
-                    datasets: [{ label: 'Valor (R$)', data: [0, 2000], backgroundColor: ['#0d9488', '#e5e7eb'], borderRadius: 6, barPercentage: 0.6 }]
-                },
-                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, grid: { color: '#f3f4f6' } }, x: { grid: { display: false } } } }
+            chart = new Chart(ctx, { type: 'bar', data: { labels: ['Vendido', 'Meta'], datasets: [{ data: [0,0], backgroundColor: ['#4f46e5', '#e2e8f0'], borderRadius: 8 }] }, options: { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true }, x: { grid: { display: false } } } } });
+            
+            const n = localStorage.getItem('optical_consultant_name');
+            const st = localStorage.getItem('optical_store_name');
+            if(n) document.getElementById('access-name').value = n;
+            if(st) document.getElementById('access-store').value = st;
+            
+            // Initial Mission Load
+            const m = missions[0];
+            document.getElementById('mission-title').innerText = m.title;
+            document.getElementById('mission-main').innerText = m.main;
+            document.getElementById('mission-digital').innerText = m.dig;
+            
+            window.currentDayIndex = 0;
+        });
+
+        // RESUMO (SOMA GERAL)
+        window.calculateSummary = () => {
+            const h = JSON.parse(localStorage.getItem(`history_${window.consultantName.replace(/\s+/g,'_').toLowerCase()}`) || '{}');
+            let tSales=0, tFlow=0, tSun=0, tKit=0, tInsQtd=0;
+            
+            let accSunMeta=0, accSunReal=0;
+            let accKitMeta=0, accKitReal=0;
+            let accInsMeta=0, accInsReal=0;
+            let accFlowLost=0;
+
+            Object.values(h).forEach(i => {
+                tSales += parseFloat(i.sales)||0;
+                
+                // Fluxo
+                const ent = parseInt(i.flowEntries) || 0;
+                const conv = parseInt(i.flowConversions) || 0;
+                const flowLostDay = Math.max(0, ent - conv);
+                tFlow += flowLostDay * 399;
+                accFlowLost += flowLostDay;
+
+                const grade = parseInt(i.prodGrade) || 0;
+                const sun = parseInt(i.prodSun) || 0;
+                const kit = parseInt(i.prodKit) || 0;
+                const ins = parseInt(i.prodInsurance) || 0;
+                
+                // Acumuladores e Gaps
+                const sunMetaDay = grade;
+                accSunMeta += sunMetaDay;
+                accSunReal += sun;
+                tSun += Math.max(0, sunMetaDay - sun) * 189;
+
+                const glassesDay = grade + sun;
+                accKitMeta += glassesDay;
+                accKitReal += kit;
+                tKit += Math.max(0, glassesDay - kit) * 20;
+
+                accInsMeta += glassesDay;
+                accInsReal += ins;
+                tInsQtd += Math.max(0, glassesDay - ins);
             });
-        }
-        function updateChart() {
-            const sales = parseFloat(document.getElementById('input-sales').value) || 0;
-            const goal = parseFloat(document.getElementById('input-goal').value) || 2000;
-            chart.data.datasets[0].data = [sales, goal];
-            chart.data.datasets[0].backgroundColor[0] = sales >= goal ? '#10b981' : '#0d9488';
-            chart.update();
-        }
+            
+            const totalLost = tFlow + tSun + tKit;
+            
+            // Atualiza Texto Simples
+            if(document.getElementById('sum-total-sales')) {
+                document.getElementById('sum-total-sales').innerText = tSales.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'});
+                document.getElementById('sum-total-lost').innerText = totalLost.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'});
+                document.getElementById('sum-lost-flow').innerText = tFlow.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'});
+                document.getElementById('sum-lost-sun').innerText = tSun.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'});
+                document.getElementById('sum-lost-kit').innerText = tKit.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'});
+                document.getElementById('sum-lost-ins').innerText = `${tInsQtd} un`;
+
+                // Atualiza CARDS de Potencial (Agora no Resumo)
+                // Fluxo
+                document.getElementById('pot-flow-lost').innerText = accFlowLost;
+                document.getElementById('pot-flow-revenue').innerText = `R$ ${tFlow.toLocaleString('pt-BR', {minimumFractionDigits:0})}`;
+                
+                // Solar
+                document.getElementById('pot-sun-target').innerText = accSunMeta;
+                document.getElementById('pot-sun-actual').innerText = accSunReal;
+                const gapSun = Math.max(0, accSunMeta - accSunReal);
+                document.getElementById('pot-sun-gap-qtd').innerText = `Gap: ${gapSun}`;
+                document.getElementById('pot-sun-revenue').innerText = `R$ ${tSun.toLocaleString('pt-BR', {minimumFractionDigits:0})}`;
+
+                // Kits
+                document.getElementById('pot-kit-target').innerText = accKitMeta;
+                document.getElementById('pot-kit-actual').innerText = accKitReal;
+                const gapKit = Math.max(0, accKitMeta - accKitReal);
+                document.getElementById('pot-kit-gap-qtd').innerText = `Gap: ${gapKit}`;
+                document.getElementById('pot-kit-revenue').innerText = `R$ ${tKit.toLocaleString('pt-BR', {minimumFractionDigits:0})}`;
+
+                // Seguros
+                document.getElementById('pot-ins-target').innerText = accInsMeta;
+                document.getElementById('pot-ins-actual').innerText = accInsReal;
+                const gapIns = Math.max(0, accInsMeta - accInsReal);
+                document.getElementById('pot-ins-gap-qtd').innerText = `Gap: ${gapIns}`;
+                // pot-ins-revenue mantém estático pois é indefinido
+            }
+        };
     </script>
 </body>
 </html>
