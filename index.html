@@ -5,7 +5,6 @@
     1. Novo Campo "Venda do Dia": Para registrar a produção específica da data.
     2. Campo "Acumulado Mês": Mantido para cálculo da Meta Inteligente (Gap).
     3. Correção de Lógica: O Resumo Geral agora soma as "Vendas do Dia" para um total preciso.
-    4. Visual: Cor laranja substituída pelo amarelo das Óticas Ammo.
 -->
 
 <!DOCTYPE html>
@@ -40,7 +39,7 @@
             
             if (!firebaseConfig.apiKey && Object.keys(firebaseConfig).length === 0) {
                 console.warn("Sem chaves Firebase. Modo Offline.");
-                statusEl.innerHTML = "<span class='text-yellow-200'>⚠ Modo Offline</span>";
+                statusEl.innerHTML = "<span class='text-amber-200'>⚠ Modo Offline</span>";
                 window.authReady = true;
                 return;
             }
@@ -224,7 +223,7 @@
             const totalLost = tFlow + tSun + tKit;
             
             if(document.getElementById('sum-total-sales')) {
-                document.getElementById('sum-total-sales').innerText = tSales.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'});
+                document.getElementById('sum-total-sales').innerText = tDailySales.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'});
                 document.getElementById('sum-total-lost').innerText = totalLost.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'});
                 document.getElementById('sum-lost-flow').innerText = tFlow.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'});
                 document.getElementById('sum-lost-sun').innerText = tSun.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'});
@@ -274,10 +273,10 @@
 <body class="min-h-screen flex flex-col">
 
     <!-- TELA DE ENTRADA -->
-    <div id="login-view" class="fixed inset-0 z-50 flex items-center justify-center bg-gradient-to-br from-amber-400 via-yellow-500 to-amber-500 px-4">
+    <div id="login-view" class="fixed inset-0 z-50 flex items-center justify-center bg-gradient-to-br from-amber-400 via-orange-400 to-yellow-500 px-4">
         <div class="bg-white/95 backdrop-blur-md p-8 rounded-3xl shadow-2xl max-w-sm w-full text-center relative z-10 border border-white/50">
             <div class="mb-8">
-                <div class="w-16 h-16 bg-gradient-to-br from-amber-500 to-yellow-500 rounded-2xl flex items-center justify-center text-3xl text-white shadow-lg mx-auto mb-4">👓</div>
+                <div class="w-16 h-16 bg-gradient-to-br from-amber-500 to-orange-600 rounded-2xl flex items-center justify-center text-3xl text-white shadow-lg mx-auto mb-4">👓</div>
                 <h1 class="text-3xl font-extrabold text-gray-800 tracking-tight">Consultor Pro</h1>
                 <p class="text-sm text-gray-500 font-medium mt-1">Gestão de Alta Performance</p>
             </div>
@@ -285,11 +284,11 @@
             <form onsubmit="handleEnter(event)" class="space-y-5">
                 <div class="text-left">
                     <label class="block text-xs font-bold text-gray-500 uppercase mb-1 ml-1 tracking-wide">Quem é você?</label>
-                    <input type="text" id="access-name" class="w-full px-4 py-3.5 rounded-xl bg-gray-50 border border-gray-200 focus:ring-2 focus:ring-yellow-500 outline-none text-gray-800 font-medium transition-all" placeholder="Seu Nome" required>
+                    <input type="text" id="access-name" class="w-full px-4 py-3.5 rounded-xl bg-gray-50 border border-gray-200 focus:ring-2 focus:ring-orange-500 outline-none text-gray-800 font-medium transition-all" placeholder="Seu Nome" required>
                 </div>
                 <div class="text-left">
                     <label class="block text-xs font-bold text-gray-500 uppercase mb-1 ml-1 tracking-wide">Nome da Loja</label>
-                    <input type="text" id="access-store" class="w-full px-4 py-3.5 rounded-xl bg-gray-50 border border-gray-200 focus:ring-2 focus:ring-yellow-500 outline-none text-gray-800 font-medium transition-all" placeholder="Ex: Ótica Centro" required>
+                    <input type="text" id="access-store" class="w-full px-4 py-3.5 rounded-xl bg-gray-50 border border-gray-200 focus:ring-2 focus:ring-orange-500 outline-none text-gray-800 font-medium transition-all" placeholder="Ex: Ótica Centro" required>
                 </div>
                 <button type="submit" id="btn-enter" class="w-full bg-gradient-to-r from-gray-900 to-gray-800 hover:from-black text-white font-bold py-4 px-6 rounded-xl shadow-xl transform transition-all hover:scale-[1.02] active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed">
                     Acessar Painel ➜
@@ -355,10 +354,10 @@
                         <div class="col-span-2"><label class="text-xs text-emerald-600 font-bold mb-1.5 block uppercase tracking-wide">⭐ Venda do Dia (Hoje)</label><div class="relative"><span class="absolute left-3 top-1/2 -translate-y-1/2 text-emerald-600 font-bold">R$</span><input type="number" id="input-daily-sales" class="w-full pl-9 pr-3 py-3 bg-emerald-50 border-2 border-emerald-200 rounded-xl text-xl font-bold text-emerald-800 outline-none focus:ring-2 focus:ring-emerald-500 transition-all" placeholder="0" oninput="handleMetricChange()"></div></div>
 
                         <!-- META INTELIGENTE -->
-                        <div class="col-span-2 bg-gradient-to-r from-yellow-50 to-amber-50 p-4 rounded-xl border border-yellow-100 mt-2">
+                        <div class="col-span-2 bg-gradient-to-r from-amber-50 to-orange-50 p-4 rounded-xl border border-amber-100 mt-2">
                             <div class="flex justify-between items-center mb-3">
                                 <p class="text-xs font-bold text-amber-800 uppercase">🎯 Planejamento</p>
-                                <div class="flex items-center gap-2"><label class="text-[10px] text-amber-700 font-bold uppercase">Dias Faltantes:</label><input type="number" id="input-days-left" class="w-16 p-1 text-center text-sm font-bold text-amber-700 bg-white border border-yellow-200 rounded outline-none focus:ring-1 focus:ring-yellow-500" value="20" oninput="handleMetricChange()"></div>
+                                <div class="flex items-center gap-2"><label class="text-[10px] text-amber-700 font-bold uppercase">Dias Faltantes:</label><input type="number" id="input-days-left" class="w-16 p-1 text-center text-sm font-bold text-amber-700 bg-white border border-amber-200 rounded outline-none focus:ring-1 focus:ring-amber-500" value="20" oninput="handleMetricChange()"></div>
                             </div>
                             <div class="flex items-end justify-between">
                                 <div><label class="text-[10px] text-slate-500 font-bold block uppercase">Falta Vender</label><p id="remaining-goal-display" class="text-sm font-bold text-slate-700">R$ 0,00</p></div>
