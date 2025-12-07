@@ -28,20 +28,19 @@
         import { getFirestore, doc, setDoc, getDoc } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
 
         // -----------------------------------------------------------
-        // ÁREA DE CONFIGURAÇÃO - COLE SUAS CHAVES AQUI
+        // ÁREA DE CONFIGURAÇÃO - CHAVES DO PROJETO "PROXIMO NIVEL"
         // -----------------------------------------------------------
         const firebaseConfig = {
-  apiKey: "AIzaSyA2w-s3ZGRlUW3KJ12Qy6fqdUJYL7TpwcE",
-  authDomain: "proximo-nivel-7bc9d.firebaseapp.com",
-  projectId: "proximo-nivel-7bc9d",
-  storageBucket: "proximo-nivel-7bc9d.firebasestorage.app",
-  messagingSenderId: "108222503240",
-  appId: "1:108222503240:web:31e62f4fafd58f8e7abb7d",
-  measurementId: "G-KSQEND9KWH"
-};
-        // Exemplo: const firebaseConfig = { apiKey: "...", ... };
+          apiKey: "AIzaSyA2w-s3ZGRlUW3KJ12Qy6fqdUJYL7TpwcE",
+          authDomain: "proximo-nivel-7bc9d.firebaseapp.com",
+          projectId: "proximo-nivel-7bc9d",
+          storageBucket: "proximo-nivel-7bc9d.firebasestorage.app",
+          messagingSenderId: "108222503240",
+          appId: "1:108222503240:web:31e62f4fafd58f8e7abb7d",
+          measurementId: "G-KSQEND9KWH"
+        };
         
-        // CORREÇÃO: Usa o ID do ambiente se disponível, senão usa o fixo
+        // ID da aplicação para separar os dados no banco
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'otica-ammo-final-v19';
         
         window.db = null;
@@ -52,7 +51,7 @@
             const statusEl = document.getElementById('connection-status');
             const btnEl = document.getElementById('btn-enter');
             
-            if (!firebaseConfig.apiKey && Object.keys(firebaseConfig).length === 0) {
+            if (!firebaseConfig.apiKey) {
                 console.warn("Sem chaves Firebase. Modo Offline.");
                 statusEl.innerHTML = "<span class='text-yellow-100 bg-yellow-600/50 px-2 py-1 rounded'>⚠ Modo Offline (Sem Config)</span>";
                 window.authReady = true;
@@ -66,15 +65,28 @@
                 
                 statusEl.innerHTML = "<span class='animate-pulse text-white'>Conectando...</span>";
                 
+                // Lógica Robusta de Autenticação (Correção de Erro)
+                let signedIn = false;
+                
+                // 1. Tenta token do ambiente (se existir e for compatível)
                 if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                    await signInWithCustomToken(window.auth, __initial_auth_token);
-                } else {
+                    try {
+                        await signInWithCustomToken(window.auth, __initial_auth_token);
+                        signedIn = true;
+                    } catch (e) {
+                        console.warn("Token customizado incompatível (usando config própria). Tentando anônimo...");
+                    }
+                }
+                
+                // 2. Se falhou ou não existe token, usa anônimo no projeto configurado
+                if (!signedIn) {
                     await signInAnonymously(window.auth);
                 }
 
             } catch (error) {
                 console.error("Erro Init:", error);
                 statusEl.innerHTML = "<span class='text-red-200'>Erro Conexão</span>";
+                // Tentativa final de recuperação
                 try { if(window.auth) await signInAnonymously(window.auth); } catch(e) {}
             }
 
@@ -125,7 +137,6 @@
             if (window.db && window.authReady) {
                 const safeName = window.consultantName.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
                 const docId = `${safeName}_${dateKey}`;
-                // Caminho corrigido para usar appId dinâmico
                 const docRef = doc(window.db, 'artifacts', appId, 'public', 'data', 'daily_reports', docId);
                 try { await setDoc(docRef, finalData, { merge: true }); } catch (e) { console.error("Erro Nuvem:", e); }
             }
@@ -205,14 +216,14 @@
             const localHistory = JSON.parse(localStorage.getItem(historyKey) || '{}');
             const records = Object.values(localHistory);
 
-            let tDailySales=0, tFlow=0, tSun=0, tKit=0, tInsQtd=0;
+            let tSales=0, tFlow=0, tSun=0, tKit=0, tInsQtd=0;
             let accSunMeta=0, accSunReal=0;
             let accKitMeta=0, accKitReal=0;
             let accInsMeta=0, accInsReal=0;
             let accFlowLost=0;
 
             records.forEach(item => {
-                tDailySales += parseFloat(item.dailySales)||0; // Soma as vendas diárias
+                tSales += parseFloat(item.dailySales)||0; // Soma as vendas diárias
                 
                 const ent = parseInt(item.flowEntries) || 0;
                 const conv = parseInt(item.flowConversions) || 0;
@@ -243,7 +254,7 @@
             const totalLost = tFlow + tSun + tKit;
             
             if(document.getElementById('sum-total-sales')) {
-                document.getElementById('sum-total-sales').innerText = tDailySales.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'});
+                document.getElementById('sum-total-sales').innerText = tSales.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'});
                 document.getElementById('sum-total-lost').innerText = totalLost.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'});
                 document.getElementById('sum-lost-flow').innerText = tFlow.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'});
                 document.getElementById('sum-lost-sun').innerText = tSun.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'});
@@ -684,6 +695,7 @@
             let accFlowLost=0;
 
             Object.values(h).forEach(i => {
+                // USA O NOVO CAMPO DIARIO PARA A SOMA
                 tSales += parseFloat(i.dailySales)||0;
                 
                 const ent = parseInt(i.flowEntries) || 0;
@@ -722,6 +734,7 @@
                 document.getElementById('sum-lost-kit').innerText = tKit.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'});
                 document.getElementById('sum-lost-ins').innerText = `${tInsQtd} un`;
 
+                // CARDS (Resumo)
                 document.getElementById('pot-flow-lost').innerText = accFlowLost;
                 document.getElementById('pot-flow-revenue').innerText = `R$ ${tFlow.toLocaleString('pt-BR', {minimumFractionDigits:0})}`;
                 
@@ -746,4 +759,3 @@
     </script>
 </body>
 </html>
-
