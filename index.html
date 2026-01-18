@@ -1,778 +1,399 @@
-<!-- 
-    PAINEL DO CONSULTOR - VERSÃO FINAL PARA GITHUB (AMARELO AMMO)
-    
-    Funcionalidades:
-    1. Painel Diário: Cronograma + Metas (Dia/Mês) + Mix Produtos + Missão.
-    2. Resumo Geral: Acumulado de vendas e oportunidades perdidas.
-    3. Materiais: Biblioteca completa de scripts.
-    4. Conexão: Firebase (Nuvem) + LocalStorage (Backup).
--->
-
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Painel de Consultor: Alta Performance</title>
-    
-    <!-- Bibliotecas Visuais e Lógicas -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    
-    <!-- Firebase SDKs -->
-    <script type="module">
-        import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js';
-        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js';
-        import { getFirestore, doc, setDoc, getDoc } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
-
-        // -----------------------------------------------------------
-        // ÁREA DE CONFIGURAÇÃO - CHAVES DO PROJETO "PROXIMO NIVEL"
-        // -----------------------------------------------------------
-        const firebaseConfig = 
-        {
-  apiKey: "AIzaSyA2w-s3ZGRlUW3KJ12Qy6fqdUJYL7TpwcE",
-  authDomain: "proximo-nivel-7bc9d.firebaseapp.com",
-  projectId: "proximo-nivel-7bc9d",
-  storageBucket: "proximo-nivel-7bc9d.firebasestorage.app",
-  messagingSenderId: "108222503240",
-  appId: "1:108222503240:web:31e62f4fafd58f8e7abb7d",
-  measurementId: "G-KSQEND9KWH"
-};
-        
-        // ID da aplicação para separar os dados no banco
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'otica-ammo-final-v19';
-        
-        window.db = null;
-        window.auth = null;
-        window.authReady = false;
-
-        async function initSystem() {
-            const statusEl = document.getElementById('connection-status');
-            const btnEl = document.getElementById('btn-enter');
-            
-            if (!firebaseConfig.apiKey) {
-                console.warn("Sem chaves Firebase. Modo Offline.");
-                statusEl.innerHTML = "<span class='text-yellow-100 bg-yellow-600/50 px-2 py-1 rounded'>⚠ Modo Offline (Sem Config)</span>";
-                window.authReady = true;
-                return;
-            }
-
-            try {
-                const app = initializeApp(firebaseConfig);
-                window.auth = getAuth(app);
-                window.db = getFirestore(app);
-                
-                statusEl.innerHTML = "<span class='animate-pulse text-white'>Conectando...</span>";
-                
-                // Lógica Robusta de Autenticação (Correção de Erro)
-                let signedIn = false;
-                
-                // 1. Tenta token do ambiente (se existir e for compatível)
-                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                    try {
-                        await signInWithCustomToken(window.auth, __initial_auth_token);
-                        signedIn = true;
-                    } catch (e) {
-                        console.warn("Token customizado incompatível (usando config própria). Tentando anônimo...");
-                    }
-                }
-                
-                // 2. Se falhou ou não existe token, usa anônimo no projeto configurado
-                if (!signedIn) {
-                    await signInAnonymously(window.auth);
-                }
-
-            } catch (error) {
-                console.error("Erro Init:", error);
-                statusEl.innerHTML = "<span class='text-red-200'>Erro Conexão</span>";
-                // Tentativa final de recuperação
-                try { if(window.auth) await signInAnonymously(window.auth); } catch(e) {}
-            }
-
-            onAuthStateChanged(window.auth, (user) => {
-                if (user) {
-                    window.authReady = true;
-                    statusEl.innerHTML = "<span class='text-white font-bold bg-green-500/30 px-3 py-1 rounded-full border border-white/20'>✓ Conexão Segura</span>";
-                    btnEl.classList.remove('opacity-50', 'cursor-not-allowed');
-                    btnEl.innerText = "Acessar Painel ➜";
-                }
-            });
-        }
-        
-        initSystem();
-
-        // --- FUNÇÕES DE DADOS ---
-        window.getDateKey = (dayIndex) => {
-            const today = new Date();
-            const dayDiff = dayIndex - (today.getDay() === 0 ? 6 : today.getDay() - 1);
-            const targetDate = new Date(today);
-            targetDate.setDate(today.getDate() + dayDiff);
-            return targetDate.toISOString().split('T')[0];
-        }
-
-        window.saveData = async (dataObj) => {
-            if (!window.consultantName) return;
-            const dateKey = window.getDateKey(window.currentDayIndex);
-            
-            const finalData = { 
-                ...dataObj, 
-                date: dateKey,
-                store: window.storeName,
-                consultant: window.consultantName,
-                lastUpdated: new Date().toISOString()
-            };
-
-            // 1. LocalStorage
-            const historyKey = `history_${window.consultantName.replace(/\s+/g, '_').toLowerCase()}`;
-            let localHistory = JSON.parse(localStorage.getItem(historyKey) || '{}');
-            localHistory[dateKey] = { ...localHistory[dateKey], ...finalData };
-            localStorage.setItem(historyKey, JSON.stringify(localHistory));
-
-            // Feedback UI
-            const statusUi = document.getElementById('save-status');
-            if(statusUi) statusUi.classList.remove('opacity-0');
-
-            // 2. Firebase
-            if (window.db && window.authReady) {
-                const safeName = window.consultantName.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
-                const docId = `${safeName}_${dateKey}`;
-                const docRef = doc(window.db, 'artifacts', appId, 'public', 'data', 'daily_reports', docId);
-                try { await setDoc(docRef, finalData, { merge: true }); } catch (e) { console.error("Erro Nuvem:", e); }
-            }
-            
-            if(statusUi) setTimeout(() => { statusUi.classList.add('opacity-0'); }, 2000);
-        };
-
-        window.fetchData = async (dayIndex) => {
-            const dateKey = window.getDateKey(dayIndex);
-            const historyKey = `history_${window.consultantName.replace(/\s+/g, '_').toLowerCase()}`;
-            const localHistory = JSON.parse(localStorage.getItem(historyKey) || '{}');
-            let data = null;
-            
-            if (window.db && window.authReady) {
-                const safeName = window.consultantName.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
-                const docId = `${safeName}_${dateKey}`;
-                const docRef = doc(window.db, 'artifacts', appId, 'public', 'data', 'daily_reports', docId);
-                try {
-                    const docSnap = await getDoc(docRef);
-                    if (docSnap.exists()) data = docSnap.data();
-                } catch (e) { console.error("Erro Ler Nuvem:", e); }
-            }
-
-            if (!data) data = localHistory[dateKey];
-            return data;
-        };
-
-        // Exportação Excel Completa
-        window.exportToExcel = () => {
-            if (!window.consultantName) return;
-            const historyKey = `history_${window.consultantName.replace(/\s+/g, '_').toLowerCase()}`;
-            const localHistory = JSON.parse(localStorage.getItem(historyKey) || '{}');
-            const records = Object.values(localHistory);
-
-            if (records.length === 0) { alert("Sem dados."); return; }
-
-            const excelData = records.map(item => {
-                const entries = parseInt(item.flowEntries) || 0;
-                const conv = parseInt(item.flowConversions) || 0;
-                const rate = entries > 0 ? ((conv / entries) * 100).toFixed(1) + '%' : '0%';
-                
-                const grade = parseInt(item.prodGrade) || 0;
-                const sun = parseInt(item.prodSun) || 0;
-                const kits = parseInt(item.prodKit) || 0;
-                const insurance = parseInt(item.prodInsurance) || 0;
-                const totalGlasses = grade + sun;
-                
-                const lostFlow = Math.max(0, entries - conv);
-                const gapSun = Math.max(0, grade - sun);
-                const gapKit = Math.max(0, totalGlasses - kits);
-                const gapIns = Math.max(0, totalGlasses - insurance);
-
-                return {
-                    "Data": item.date, "Loja": item.store, "Consultor": item.consultant,
-                    "Venda do Dia (R$)": parseFloat(item.dailySales) || 0,
-                    "Acumulado Mês (R$)": parseFloat(item.sales) || 0, // 'sales' guarda o acumulado
-                    "Meta (R$)": parseFloat(item.goal) || 0,
-                    "Fluxo Total": entries, "Vendas Qtd": conv, "Conversão": rate,
-                    "Sol": sun, "Grau": grade, "Kits": kits, "Seguros": insurance,
-                    "Perda Fluxo (R$)": lostFlow * 399,
-                    "Perda Solar (R$)": gapSun * 189, 
-                    "Perda Kits (R$)": gapKit * 20, 
-                    "Perda Seguros (Qtd)": gapIns
-                };
-            });
-
-            const ws = XLSX.utils.json_to_sheet(excelData);
-            const wb = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(wb, ws, "Relatório");
-            XLSX.writeFile(wb, `Relatorio_${window.consultantName}.xlsx`);
-        };
-        
-        // --- CÁLCULO DE RESUMO (AGREGADO) ---
-        window.calculateSummary = () => {
-             if (!window.consultantName) return;
-            const historyKey = `history_${window.consultantName.replace(/\s+/g, '_').toLowerCase()}`;
-            const localHistory = JSON.parse(localStorage.getItem(historyKey) || '{}');
-            const records = Object.values(localHistory);
-
-            let tSales=0, tFlow=0, tSun=0, tKit=0, tInsQtd=0;
-            let accSunMeta=0, accSunReal=0;
-            let accKitMeta=0, accKitReal=0;
-            let accInsMeta=0, accInsReal=0;
-            let accFlowLost=0;
-
-            records.forEach(item => {
-                tSales += parseFloat(item.dailySales)||0; // Soma as vendas diárias
-                
-                const ent = parseInt(item.flowEntries) || 0;
-                const conv = parseInt(item.flowConversions) || 0;
-                const flowLostDay = Math.max(0, ent - conv);
-                tFlow += flowLostDay * 399;
-                accFlowLost += flowLostDay;
-
-                const grade = parseInt(item.prodGrade) || 0;
-                const sun = parseInt(item.prodSun) || 0;
-                const kit = parseInt(item.prodKit) || 0;
-                const ins = parseInt(item.prodInsurance) || 0;
-                
-                const sunMetaDay = grade;
-                accSunMeta += sunMetaDay;
-                accSunReal += sun;
-                tSun += Math.max(0, sunMetaDay - sun) * 189;
-
-                const glassesDay = grade + sun;
-                accKitMeta += glassesDay;
-                accKitReal += kit;
-                tKit += Math.max(0, glassesDay - kit) * 20;
-
-                accInsMeta += glassesDay;
-                accInsReal += ins;
-                tInsQtd += Math.max(0, glassesDay - ins);
-            });
-            
-            const totalLost = tFlow + tSun + tKit;
-            
-            if(document.getElementById('sum-total-sales')) {
-                document.getElementById('sum-total-sales').innerText = tSales.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'});
-                document.getElementById('sum-total-lost').innerText = totalLost.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'});
-                document.getElementById('sum-lost-flow').innerText = tFlow.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'});
-                document.getElementById('sum-lost-sun').innerText = tSun.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'});
-                document.getElementById('sum-lost-kit').innerText = tKit.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'});
-                document.getElementById('sum-lost-ins').innerText = `${tInsQtd} un`;
-
-                // Cards de Potencial (Acumulado)
-                document.getElementById('pot-flow-lost').innerText = accFlowLost;
-                document.getElementById('pot-flow-revenue').innerText = `R$ ${tFlow.toLocaleString('pt-BR', {minimumFractionDigits:0})}`;
-                
-                document.getElementById('pot-sun-target').innerText = accSunMeta;
-                document.getElementById('pot-sun-actual').innerText = accSunReal;
-                const gapSun = Math.max(0, accSunMeta - accSunReal);
-                document.getElementById('pot-sun-gap-qtd').innerText = `Gap: ${gapSun}`;
-                document.getElementById('pot-sun-revenue').innerText = `R$ ${tSun.toLocaleString('pt-BR', {minimumFractionDigits:0})}`;
-
-                document.getElementById('pot-kit-target').innerText = accKitMeta;
-                document.getElementById('pot-kit-actual').innerText = accKitReal;
-                const gapKit = Math.max(0, accKitMeta - accKitReal);
-                document.getElementById('pot-kit-gap-qtd').innerText = `Gap: ${gapKit}`;
-                document.getElementById('pot-kit-revenue').innerText = `R$ ${tKit.toLocaleString('pt-BR', {minimumFractionDigits:0})}`;
-
-                document.getElementById('pot-ins-target').innerText = accInsMeta;
-                document.getElementById('pot-ins-actual').innerText = accInsReal;
-                const gapIns = Math.max(0, accInsMeta - accInsReal);
-                document.getElementById('pot-ins-gap-qtd').innerText = `Gap: ${gapIns}`;
-            }
-        };
-    </script>
-
+    <title>Sistema Ammo - Alta Performance</title>
     <style>
-        body { font-family: 'Plus Jakarta Sans', sans-serif; background-color: #f8fafc; color: #1e293b; }
-        ::-webkit-scrollbar { width: 6px; height: 6px; }
-        ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        :root { 
+            --ammo-gold: #D4AF37; 
+            --ammo-black: #000000; 
+            --ammo-dark-gray: #1a1a1a;
+            --ammo-bg: #f4f4f4; 
+            --alert-red: #d9534f;
+            --success-green: #28a745;
+        }
+        body { font-family: 'Segoe UI', sans-serif; margin: 0; background: var(--ammo-bg); color: var(--ammo-dark-gray); padding-bottom: 50px; }
         
-        .checkbox-custom { appearance: none; width: 1.25em; height: 1.25em; border: 2px solid #eab308; border-radius: 6px; display: inline-grid; place-content: center; cursor: pointer; transition: all 0.2s; }
-        .checkbox-custom:checked { background-color: #eab308; border-color: #eab308; }
-        .checkbox-custom::before { content: ""; width: 0.65em; height: 0.65em; transform: scale(0); transition: 120ms transform ease-in-out; box-shadow: inset 1em 1em white; transform-origin: center; clip-path: polygon(14% 44%, 0 65%, 50% 100%, 100% 16%, 80% 0%, 43% 62%); }
-        .checkbox-custom:checked::before { transform: scale(1); }
+        /* TELA LOGIN */
+        #login-screen {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background-color: var(--ammo-black); z-index: 9999;
+            display: flex; justify-content: center; align-items: center; flex-direction: column; color: var(--ammo-gold);
+        }
+        .login-box { width: 80%; max-width: 400px; text-align: center; padding: 30px; border: 2px solid var(--ammo-gold); border-radius: 10px; background: var(--ammo-dark-gray); }
+        .login-input { width: 100%; padding: 15px; margin-bottom: 15px; border: 1px solid #444; border-radius: 5px; background: #333; color: white; box-sizing: border-box; }
+        .btn-login { width: 100%; padding: 15px; background-color: var(--ammo-gold); color: var(--ammo-black); font-weight: bold; border: none; border-radius: 5px; cursor: pointer; }
+
+        /* APP */
+        #main-app { display: none; }
+        .tabs { display: flex; background: var(--ammo-black); padding: 10px; overflow-x: auto; position: sticky; top: 0; z-index: 100; }
+        .tab-btn { background: none; border: none; color: white; padding: 12px 20px; cursor: pointer; font-weight: bold; white-space: nowrap; }
+        .tab-btn.active { border-bottom: 4px solid var(--ammo-gold); color: var(--ammo-gold); }
         
-        .glass-panel { background: white; border: 1px solid #f1f5f9; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.02); }
-        details > summary { list-style: none; }
-        details > summary::-webkit-details-marker { display: none; }
+        .tab-content { display: none; padding: 20px; max-width: 600px; margin: 0 auto; }
+        .tab-content.active { display: block; animation: fadeIn 0.3s; }
+        @keyframes fadeIn { from { opacity:0; } to { opacity:1; } }
+
+        .card { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); margin-bottom: 20px; }
+        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
+        .input-group { margin-bottom: 15px; }
+        label { display: block; margin-bottom: 6px; font-weight: 600; font-size: 0.9rem; }
+        input { width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 8px; box-sizing: border-box; }
+        
+        /* BOTÕES */
+        .btn-action { width: 100%; background: var(--ammo-black); color: white; padding: 14px; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; margin-top: 10px; }
+        .btn-whatsapp { background: #25D366; }
+        
+        /* BOTÃO DE RESET TOTAL (VERMELHO) */
+        .btn-danger { background: var(--alert-red); margin-top: 20px; border: 2px solid #a00; }
+        .btn-danger:hover { background: #c9302c; }
+
+        .metric-box { background: #fff; border: 1px solid #eee; padding: 15px; text-align: center; border-radius: 8px; }
+        .metric-val { font-size: 1.4rem; font-weight: 800; color: var(--ammo-black); }
+        
+        .loss-box { background-color: #fff5f5; border-left: 4px solid var(--alert-red); padding: 15px; margin-bottom: 5px; }
+        .success-box { background-color: #f0fff4; border-left: 4px solid var(--success-green); padding: 15px; color: var(--success-green); font-weight: bold; }
+
+        /* DESTAQUE META DIÁRIA */
+        .daily-target-box {
+            background-color: #fffde7;
+            border: 2px solid var(--ammo-gold);
+            padding: 15px;
+            text-align: center;
+            border-radius: 8px;
+            margin-top: 15px;
+        }
+        .daily-target-val {
+            font-size: 1.6rem;
+            color: #d89e00;
+            font-weight: 900;
+        }
     </style>
 </head>
-<body class="min-h-screen flex flex-col">
+<body>
 
-    <!-- TELA DE ENTRADA -->
-    <div id="login-view" class="fixed inset-0 z-50 flex items-center justify-center bg-gradient-to-br from-yellow-400 via-amber-500 to-yellow-600 px-4">
-        <div class="bg-white/95 backdrop-blur-md p-8 rounded-3xl shadow-2xl max-w-sm w-full text-center relative z-10 border border-white/50">
-            <div class="mb-8">
-                <div class="w-16 h-16 bg-gradient-to-br from-yellow-500 to-amber-600 rounded-2xl flex items-center justify-center text-3xl text-white shadow-lg mx-auto mb-4">👓</div>
-                <h1 class="text-3xl font-extrabold text-gray-800 tracking-tight">Consultor Pro</h1>
-                <p class="text-sm text-gray-500 font-medium mt-1">Alta Performance em Ótica</p>
-            </div>
-            
-            <form onsubmit="handleEnter(event)" class="space-y-5">
-                <div class="text-left">
-                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1 ml-1 tracking-wide">Quem é você?</label>
-                    <input type="text" id="access-name" class="w-full px-4 py-3.5 rounded-xl bg-gray-50 border border-gray-200 focus:ring-2 focus:ring-yellow-500 outline-none text-gray-800 font-medium transition-all" placeholder="Seu Nome" required>
-                </div>
-                <div class="text-left">
-                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1 ml-1 tracking-wide">Nome da Loja</label>
-                    <input type="text" id="access-store" class="w-full px-4 py-3.5 rounded-xl bg-gray-50 border border-gray-200 focus:ring-2 focus:ring-yellow-500 outline-none text-gray-800 font-medium transition-all" placeholder="Ex: Ótica Ammo" required>
-                </div>
-                <button type="submit" id="btn-enter" class="w-full bg-gradient-to-r from-gray-900 to-gray-800 hover:from-black text-white font-bold py-4 px-6 rounded-xl shadow-xl transform transition-all hover:scale-[1.02] active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed">
-                    Acessar Painel ➜
-                </button>
-            </form>
-            
-            <p id="connection-status" class="mt-6 text-xs font-medium text-gray-500 bg-white/50 inline-block px-2 rounded">Inicializando...</p>
+    <div id="login-screen">
+        <div class="login-box">
+            <h2 style="color:var(--ammo-gold); margin-top:0;">AMMO OPTICAL</h2>
+            <p>Área do Consultor</p>
+            <input type="text" id="loginConsultor" class="login-input" placeholder="Nome do Consultor">
+            <input type="text" id="loginOtica" class="login-input" placeholder="Unidade / Ótica">
+            <button class="btn-login" onclick="realizarLogin()">ENTRAR</button>
         </div>
     </div>
 
-    <!-- TELA PRINCIPAL -->
-    <div id="dashboard-view" class="hidden flex flex-col min-h-screen w-full bg-slate-50">
-        <!-- Navbar -->
-        <header class="bg-white/80 backdrop-blur-md border-b border-gray-200 sticky top-0 z-40">
-            <div class="max-w-7xl mx-auto px-4 py-3">
-                <div class="flex flex-col md:flex-row justify-between items-center gap-4">
-                    <div class="flex items-center gap-4 w-full md:w-auto">
-                        <div class="h-10 w-10 bg-gradient-to-br from-yellow-500 to-amber-600 rounded-xl flex items-center justify-center text-white font-bold text-lg shadow-md">C</div>
-                        <div class="flex-1">
-                            <h1 class="text-lg font-bold text-slate-800 leading-tight"><span id="header-name">Consultor</span></h1>
-                            <div class="flex items-center gap-2">
-                                <span class="text-xs font-semibold text-slate-400 uppercase tracking-wide">Área de Trabalho</span>
-                                <span id="save-status" class="text-[10px] font-bold text-green-600 bg-green-50 px-2 py-0.5 rounded-full opacity-0 transition-opacity border border-green-100">Salvo ✓</span>
-                            </div>
-                        </div>
-                        <button onclick="exportToExcel()" class="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white text-xs font-bold py-2.5 px-4 rounded-lg shadow-md transition-all"><span>📊</span> Baixar Excel</button>
-                        <button onclick="logout()" class="md:hidden text-xs text-red-500 font-bold ml-2">Sair</button>
-                    </div>
-                    <div class="flex bg-slate-100 p-1.5 rounded-xl w-full md:w-auto overflow-x-auto shadow-inner">
-                        <button onclick="switchTab('dashboard')" id="tab-dashboard" class="flex-1 px-4 py-2 rounded-lg text-sm font-bold bg-white shadow-sm text-amber-700 transition-all whitespace-nowrap">Painel Diário</button>
-                        <button onclick="switchTab('summary')" id="tab-summary" class="flex-1 px-4 py-2 rounded-lg text-sm font-medium text-slate-500 hover:text-amber-600 transition-all whitespace-nowrap">Resumo Geral</button>
-                        <button onclick="switchTab('materials')" id="tab-materials" class="flex-1 px-4 py-2 rounded-lg text-sm font-medium text-slate-500 hover:text-amber-600 transition-all whitespace-nowrap">Materiais</button>
-                    </div>
-                </div>
-            </div>
-        </header>
+    <div id="main-app">
+        <div class="tabs">
+            <button class="tab-btn active" onclick="openTab('dashboard')">Painel Diário</button>
+            <button class="tab-btn" onclick="openTab('config')">Configurações</button>
+            <button class="tab-btn" onclick="openTab('treinamento')">Treinamento</button>
+            <button class="tab-btn" onclick="openTab('resumo')">Relatórios</button>
+        </div>
 
-        <!-- ABA DASHBOARD -->
-        <main id="view-dashboard" class="flex-grow max-w-7xl mx-auto px-4 py-8 w-full grid grid-cols-1 lg:grid-cols-12 gap-8">
-            <div class="lg:col-span-12 flex bg-white p-2 rounded-2xl shadow-sm border border-gray-100 overflow-x-auto scrollbar-hide" id="days-container"></div>
-
-            <!-- Coluna Esquerda: Cronograma -->
-            <div class="lg:col-span-7 flex flex-col gap-6 order-2 lg:order-1">
-                <div class="glass-panel p-6 rounded-2xl border-l-4 border-amber-500 bg-white">
-                    <h2 class="text-xl font-bold text-slate-800">Cronograma Diário</h2>
-                    <p class="text-sm text-slate-500">Checklist de tarefas.</p>
-                </div>
-                <!-- CONTAINER DO CHECKLIST -->
-                <div class="relative pl-4" id="timeline-container"></div>
+        <div id="dashboard" class="tab-content active">
+            <div style="margin-bottom: 20px; color: #555;">
+                Consultor: <strong id="displayNomeUser">...</strong> | <span id="displayOticaUser">...</span>
             </div>
 
-            <!-- Coluna Direita: Ferramentas -->
-            <div class="lg:col-span-5 flex flex-col gap-6 order-1 lg:order-2">
-                
-                <!-- METAS E FLUXO -->
-                <div class="glass-panel p-6 rounded-2xl bg-white">
-                    <h3 class="text-slate-800 font-bold mb-6 text-lg">Metas e Fluxo</h3>
-                    <div class="grid grid-cols-2 gap-4 mb-6">
-                        <!-- LINHA 1 -->
-                        <div class="col-span-2 sm:col-span-1"><label class="text-xs text-slate-500 font-bold mb-1.5 block uppercase">Meta Mensal</label><div class="relative"><span class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold">R$</span><input type="number" id="input-goal" class="w-full pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-lg font-bold text-slate-700 outline-none focus:ring-2 focus:ring-amber-500 transition-all" value="40000" oninput="handleMetricChange()"></div></div>
-                        <div class="col-span-2 sm:col-span-1"><label class="text-xs text-slate-500 font-bold mb-1.5 block uppercase">Acumulado Mês</label><div class="relative"><span class="absolute left-3 top-1/2 -translate-y-1/2 text-amber-500 font-bold">R$</span><input type="number" id="input-sales" class="w-full pl-9 pr-3 py-2.5 bg-amber-50/50 border border-amber-100 rounded-xl text-lg font-bold text-amber-700 outline-none focus:ring-2 focus:ring-amber-500 transition-all" placeholder="0" oninput="handleMetricChange()"></div></div>
-                        
-                        <!-- LINHA 2: VENDA DO DIA -->
-                        <div class="col-span-2"><label class="text-xs text-green-600 font-bold mb-1.5 block uppercase tracking-wide">⭐ Venda do Dia (Hoje)</label><div class="relative"><span class="absolute left-3 top-1/2 -translate-y-1/2 text-green-600 font-bold">R$</span><input type="number" id="input-daily-sales" class="w-full pl-9 pr-3 py-3 bg-green-50 border-2 border-green-200 rounded-xl text-xl font-bold text-green-800 outline-none focus:ring-2 focus:ring-green-500 transition-all" placeholder="0" oninput="handleMetricChange()"></div></div>
-
-                        <!-- META INTELIGENTE -->
-                        <div class="col-span-2 bg-gradient-to-r from-gray-50 to-slate-50 p-4 rounded-xl border border-gray-200 mt-2">
-                            <div class="flex justify-between items-center mb-3">
-                                <p class="text-xs font-bold text-slate-600 uppercase">🎯 Planejamento</p>
-                                <div class="flex items-center gap-2"><label class="text-[10px] text-slate-500 font-bold uppercase">Dias Faltantes:</label><input type="number" id="input-days-left" class="w-16 p-1 text-center text-sm font-bold text-slate-700 bg-white border border-gray-300 rounded outline-none focus:ring-1 focus:ring-amber-500" value="20" oninput="handleMetricChange()"></div>
-                            </div>
-                            <div class="flex items-end justify-between">
-                                <div><label class="text-[10px] text-slate-500 font-bold block uppercase">Falta Vender</label><p id="remaining-goal-display" class="text-sm font-bold text-slate-700">R$ 0,00</p></div>
-                                <div class="text-right"><label class="text-[10px] text-slate-500 font-bold block uppercase">Meta Diária</label><p id="daily-needed-display" class="text-2xl font-extrabold text-amber-600">R$ 0,00</p></div>
-                            </div>
-                        </div>
-
-                        <!-- Fluxo -->
-                        <div class="col-span-2 bg-slate-50 p-4 rounded-xl border border-slate-200 mt-2">
-                            <p class="text-xs font-bold text-slate-600 uppercase mb-3">Fluxo de Atendimento</p>
-                            <div class="grid grid-cols-3 gap-4 items-end">
-                                <div><label class="text-[10px] text-slate-400 font-bold block text-center mb-1">Entraram</label><input type="number" id="input-flow-entries" class="w-full p-2 bg-white border border-slate-200 rounded-lg text-sm text-center font-bold outline-none focus:ring-2 focus:ring-amber-500" placeholder="0" oninput="handleMetricChange()"></div>
-                                <div><label class="text-[10px] text-slate-400 font-bold block text-center mb-1">Compraram</label><input type="number" id="input-flow-conversions" class="w-full p-2 bg-white border border-slate-200 rounded-lg text-sm text-center font-bold outline-none focus:ring-2 focus:ring-amber-500" placeholder="0" oninput="handleMetricChange()"></div>
-                                <div><label class="text-[10px] text-slate-400 font-bold block text-center mb-1">Conversão</label><div id="conversion-display" class="w-full p-2 bg-amber-500 text-white rounded-lg text-sm text-center font-bold shadow-md">0%</div></div>
-                            </div>
-                        </div>
-                        
-                        <div><label class="text-xs text-slate-500 font-bold mb-1 block">Leads</label><input type="number" id="input-leads" class="w-full p-2 bg-white border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-amber-500" placeholder="0" oninput="handleMetricChange()"></div>
-                        <div><label class="text-xs text-slate-500 font-bold mb-1 block">Agendamentos</label><input type="number" id="input-appointments" class="w-full p-2 bg-white border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-amber-500" placeholder="0" oninput="handleMetricChange()"></div>
-                    </div>
-                    <div class="chart-container"><canvas id="performanceChart"></canvas></div>
+            <div class="card">
+                <h3>🎯 Meta Mensal</h3>
+                <div class="input-group">
+                    <label>Meta (R$)</label>
+                    <input type="number" id="metaMensal" placeholder="Sua meta..." oninput="atualizarCalculosMeta()">
                 </div>
-
-                <!-- MIX DE PRODUTOS (INTEGRADO) -->
-                <div class="glass-panel p-6 rounded-2xl border-l-4 border-amber-500 bg-white mt-6">
-                    <h3 class="text-slate-800 font-bold mb-4 text-lg">Mix de Produtos (Dia)</h3>
-                    <div class="grid grid-cols-2 gap-4">
-                        <div><label class="text-[10px] font-bold text-slate-500 uppercase">Óculos Sol</label><input type="number" id="input-prod-sun" class="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg font-bold text-amber-600 outline-none focus:ring-2 focus:ring-amber-500" placeholder="0" oninput="handleMetricChange()"></div>
-                        <div><label class="text-[10px] font-bold text-slate-500 uppercase">Óculos Grau</label><input type="number" id="input-prod-grade" class="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg font-bold text-amber-600 outline-none focus:ring-2 focus:ring-amber-500" placeholder="0" oninput="handleMetricChange()"></div>
-                        <div><label class="text-[10px] font-bold text-slate-500 uppercase">Lentes Ctt</label><input type="number" id="input-prod-contact" class="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg font-bold text-amber-600 outline-none focus:ring-2 focus:ring-amber-500" placeholder="0" oninput="handleMetricChange()"></div>
-                        <div><label class="text-[10px] font-bold text-slate-500 uppercase">Kit Limpeza</label><input type="number" id="input-prod-kit" class="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg font-bold text-amber-600 outline-none focus:ring-2 focus:ring-amber-500" placeholder="0" oninput="handleMetricChange()"></div>
-                        <div><label class="text-[10px] font-bold text-slate-500 uppercase">Acessórios</label><input type="number" id="input-prod-chain" class="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg font-bold text-amber-600 outline-none focus:ring-2 focus:ring-amber-500" placeholder="0" oninput="handleMetricChange()"></div>
-                        <div><label class="text-[10px] font-bold text-slate-500 uppercase">Infantil</label><input type="number" id="input-prod-kids" class="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg font-bold text-amber-600 outline-none focus:ring-2 focus:ring-amber-500" placeholder="0" oninput="handleMetricChange()"></div>
-                        <div class="col-span-2"><label class="text-[10px] font-bold text-slate-500 uppercase">Seguros / Garantia</label><input type="number" id="input-prod-insurance" class="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg font-bold text-amber-600 outline-none focus:ring-2 focus:ring-amber-500" placeholder="0" oninput="handleMetricChange()"></div>
+                <div class="grid-2">
+                    <div class="metric-box">
+                        <div class="metric-val" id="viewAcumulado">R$ 0,00</div>
+                        <small>Acumulado Total</small>
+                    </div>
+                    <div class="metric-box">
+                        <div class="metric-val" id="viewFaltante" style="color:var(--alert-red)">R$ 0,00</div>
+                        <small>Falta para Meta</small>
                     </div>
                 </div>
 
-                <!-- MISSÃO -->
-                <div class="glass-panel p-6 rounded-2xl relative overflow-hidden group bg-white mt-6">
-                    <div class="absolute top-0 right-0 w-32 h-32 bg-gradient-to-bl from-amber-50 to-white rounded-bl-full -mr-8 -mt-8 transition-transform group-hover:scale-110"></div>
-                    <h3 class="text-amber-500 text-xs font-bold uppercase tracking-wider mb-2">Foco de Hoje</h3>
-                    <h2 id="mission-title" class="text-2xl font-bold text-slate-800 mb-6 relative z-10">...</h2>
-                    <div class="space-y-4 relative z-10">
-                        <div class="flex items-start gap-4 p-4 bg-slate-50 rounded-xl border border-slate-100"><span class="text-2xl">🎯</span><div><p class="text-xs font-bold text-slate-500 uppercase">Ação Principal</p><p id="mission-main" class="text-sm text-slate-800 font-medium leading-relaxed">Carregando...</p></div></div>
-                        <div class="flex items-start gap-4 p-4 bg-slate-50 rounded-xl border border-slate-100"><span class="text-2xl">💡</span><div><p class="text-xs font-bold text-slate-500 uppercase">Dica Digital</p><p id="mission-digital" class="text-sm text-slate-800 leading-relaxed">Carregando...</p></div></div>
-                    </div>
+                <div class="daily-target-box">
+                    <small style="color:#666; font-weight:bold; text-transform:uppercase;">Meta Diária Necessária</small>
+                    <div class="daily-target-val" id="metaDiariaSug">R$ 0,00</div>
+                    <small style="color:#888; font-size:0.8rem;">(Considerando dias de Seg. a Sáb.)</small>
                 </div>
             </div>
-        </main>
 
-        <!-- ABA RESUMO GERAL -->
-        <main id="view-summary" class="hidden flex-grow max-w-4xl mx-auto px-4 py-8 w-full">
-            <div class="bg-white rounded-2xl shadow-sm border border-gray-200 p-8">
-                <div class="mb-8 border-b border-gray-100 pb-6">
-                    <h2 class="text-3xl font-extrabold text-slate-800">Resumo Geral Acumulado</h2>
-                    <p class="text-slate-500 mt-1">Soma total de todo o período salvo.</p>
-                </div>
-
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-8 mb-10">
-                    <div class="bg-emerald-50 rounded-2xl p-6 border border-emerald-100">
-                        <p class="text-sm font-bold text-emerald-600 uppercase tracking-wide mb-2">Total Vendido (Soma Diária)</p>
-                        <p id="sum-total-sales" class="text-4xl font-extrabold text-emerald-700">R$ 0,00</p>
+            <div class="card">
+                <h3>📊 Registro Diário</h3>
+                <div class="grid-2">
+                    <div class="input-group">
+                        <label>Clientes Atendidos</label>
+                        <input type="number" id="clientesAtendidos" class="input-dia" oninput="calcTudo()">
                     </div>
-                    <div class="bg-rose-50 rounded-2xl p-6 border border-rose-100">
-                        <p class="text-sm font-bold text-rose-600 uppercase tracking-wide mb-2">Total Deixado na Mesa (Potencial)</p>
-                        <p id="sum-total-lost" class="text-4xl font-extrabold text-rose-700">R$ 0,00</p>
+                    <div class="input-group">
+                        <label>Clientes Compraram</label>
+                        <input type="number" id="clientesCompraram" class="input-dia" oninput="calcTudo()">
                     </div>
                 </div>
                 
-                <div class="bg-slate-50 rounded-xl p-6 border border-slate-100 mb-8">
-                    <h3 class="font-bold text-slate-700 mb-4">Detalhamento (Acumulado)</h3>
-                    <div class="space-y-4">
-                        <div class="flex justify-between items-center border-b border-slate-200 pb-2"><span class="text-sm text-slate-600">Fluxo Perdido</span><span id="sum-lost-flow" class="font-bold text-slate-800">R$ 0,00</span></div>
-                        <div class="flex justify-between items-center border-b border-slate-200 pb-2"><span class="text-sm text-slate-600">2ª Peça Solar (Gap)</span><span id="sum-lost-sun" class="font-bold text-slate-800">R$ 0,00</span></div>
-                        <div class="flex justify-between items-center border-b border-slate-200 pb-2"><span class="text-sm text-slate-600">Acessórios / Kits (Gap)</span><span id="sum-lost-kit" class="font-bold text-slate-800">R$ 0,00</span></div>
-                        <div class="flex justify-between items-center pt-2 border-t border-slate-200"><span class="text-sm text-slate-600 font-bold">Seguros Perdidos (Quantidade)</span><span id="sum-lost-ins" class="font-bold text-amber-600">0 un</span></div>
-                    </div>
-                </div>
+                <label>Venda Total Hoje (R$)</label>
+                <input type="number" id="vendaDia" class="input-dia" placeholder="0.00" oninput="atualizarCalculosMeta()">
 
-                <!-- CARDS DE POTENCIAL -->
-                <div class="bg-gradient-to-br from-gray-50 to-slate-100 border border-slate-200 rounded-2xl p-8">
-                    <h3 class="text-xl font-bold text-slate-900 mb-6 flex items-center gap-3"><span class="bg-amber-500 text-white rounded-lg p-1">🚀</span> Potencial de Vendas (Acumulado)</h3>
-                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                        <div class="bg-white p-5 rounded-xl shadow-sm border border-red-50 relative">
-                            <p class="text-xs font-bold text-slate-400 uppercase tracking-wide">Fluxo Perdido</p>
-                            <div class="flex justify-between items-end border-b border-slate-100 pb-3 mb-3"><div><span class="text-[10px] font-bold text-slate-400 uppercase">Qtd Total</span><p id="pot-flow-lost" class="text-xl font-bold text-slate-700">0</p></div><div class="text-right"><span class="text-[10px] font-bold text-slate-400 uppercase">Valor</span><p id="pot-flow-revenue" class="text-xl font-bold text-red-500">R$ 0</p></div></div>
-                        </div>
-                        <div class="bg-white p-5 rounded-xl shadow-sm border border-amber-50">
-                            <p class="text-xs font-bold text-slate-400 uppercase tracking-wide">Solar (Gap)</p>
-                            <div class="flex justify-between items-end border-b border-slate-100 pb-3 mb-3"><div><span class="text-[10px] font-bold text-slate-400 uppercase">Meta Total</span><p id="pot-sun-target" class="text-xl font-bold text-slate-700">0</p></div><div class="text-right"><span class="text-[10px] font-bold text-slate-400 uppercase">Real</span><p id="pot-sun-actual" class="text-xl font-bold text-amber-600">0</p></div></div>
-                            <div><p id="pot-sun-gap-qtd" class="text-sm font-bold text-slate-400">Gap: 0</p><p id="pot-sun-revenue" class="text-xs text-red-400">R$ 0</p></div>
-                        </div>
-                        <div class="bg-white p-5 rounded-xl shadow-sm border border-amber-50">
-                            <p class="text-xs font-bold text-slate-400 uppercase tracking-wide">Kits (Gap)</p>
-                            <div class="flex justify-between items-end border-b border-slate-100 pb-3 mb-3"><div><span class="text-[10px] font-bold text-slate-400 uppercase">Meta Total</span><p id="pot-kit-target" class="text-xl font-bold text-slate-700">0</p></div><div class="text-right"><span class="text-[10px] font-bold text-slate-400 uppercase">Real</span><p id="pot-kit-actual" class="text-xl font-bold text-amber-600">0</p></div></div>
-                            <div><p id="pot-kit-gap-qtd" class="text-sm font-bold text-slate-400">Gap: 0</p><p id="pot-kit-revenue" class="text-xs text-red-400">R$ 0</p></div>
-                        </div>
-                        <div class="bg-white p-5 rounded-xl shadow-sm border border-amber-50">
-                            <p class="text-xs font-bold text-slate-400 uppercase tracking-wide">Seguros (Gap)</p>
-                            <div class="flex justify-between items-end border-b border-slate-100 pb-3 mb-3"><div><span class="text-[10px] font-bold text-slate-400 uppercase">Meta Total</span><p id="pot-ins-target" class="text-xl font-bold text-slate-700">0</p></div><div class="text-right"><span class="text-[10px] font-bold text-slate-400 uppercase">Real</span><p id="pot-ins-actual" class="text-xl font-bold text-amber-600">0</p></div></div>
-                            <div><p id="pot-ins-gap-qtd" class="text-sm font-bold text-slate-400">Gap: 0</p><p class="text-xs text-slate-400">Sem valor financeiro</p></div>
-                        </div>
-                    </div>
+                <h4 style="margin-top:20px; border-bottom:1px solid #eee;">Produtos Vendidos</h4>
+                <div class="grid-2">
+                    <input type="number" id="prodGrau" class="input-dia" placeholder="Grau" oninput="calcTudo()">
+                    <input type="number" id="prodSolar" class="input-dia" placeholder="Solar" oninput="calcTudo()">
+                    <input type="number" id="prodInfantil" class="input-dia" placeholder="Infantil">
+                    <input type="number" id="prodArmacaoAmmo" class="input-dia" placeholder="Arm. Ammo">
+                    <input type="number" id="prodArmacaoGrife" class="input-dia" placeholder="Arm. Grife" oninput="calcTudo()">
+                    <input type="number" id="prodLentes" class="input-dia" placeholder="Lentes Ctt">
+                    <input type="number" id="prodKit" class="input-dia" placeholder="Kit Limpa" oninput="calcTudo()">
+                    <input type="number" id="prodCorrente" class="input-dia" placeholder="Corrente" oninput="calcTudo()">
+                    <input type="number" id="prodSeguro" class="input-dia" placeholder="Seguro" oninput="calcTudo()">
                 </div>
+                
+                <button class="btn-action" onclick="enviarDados()">💾 Salvar e Enviar Planilha</button>
             </div>
-        </main>
 
-        <!-- ABA MATERIAIS -->
-        <main id="view-materials" class="hidden flex-grow max-w-4xl mx-auto px-4 py-8 w-full">
-            <div class="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
-                <div class="p-8 bg-gradient-to-r from-amber-50 to-yellow-50 border-b border-amber-100">
-                    <h2 class="text-3xl font-extrabold text-amber-900 tracking-tight">📚 Materiais de Apoio</h2>
-                </div>
-                <div class="divide-y divide-gray-100">
-                    <details class="group p-6 open:bg-slate-50 transition-all cursor-pointer"><summary class="flex justify-between items-center font-bold text-slate-700 text-lg"><span>👋 Resposta a interesse mostrado</span><span class="text-amber-500 group-open:rotate-180 transition-transform">▼</span></summary><div class="mt-6 text-gray-600 space-y-6 pl-4 border-l-4 border-amber-400"><p class="italic">"Oi [Nome do Cliente],
-Agradecemos seu interesse em [Produto/Serviço] da [Nome da Empresa]. Sou [Seu Nome], e estou aqui para responder a todas as suas perguntas e ajudar a encontrar a melhor solução para suas necessidades.
-Você tem disponibilidade para uma breve conversa sobre como nosso [Produto/Serviço] pode atender sua necessidade?
-Aguardo seu retorno,..."</p></div></details>
-                     <details class="group p-6 open:bg-slate-50 transition-all cursor-pointer"><summary class="flex justify-between items-center font-bold text-slate-700 text-lg"><span>👋 Lembrete Amigável Para Cliente que Não Retornou</span><span class="text-amber-500 group-open:rotate-180 transition-transform">▼</span></summary><div class="mt-6 text-gray-600 space-y-6 pl-4 border-l-4 border-amber-400"><p class="italic">"Olá, [Nome do Cliente]! Aqui é [Seu Nome], da [Sua Empresa]. Notei que você mostrou interesse em [Produto/Serviço] há algum tempo. Estou passando para ver se posso ajudar com mais informações ou responder a alguma dúvida que possa ter surgido. Tem algum horário conveniente para conversarmos?,..."</p></div></details>
-                    <details class="group p-6 open:bg-slate-50 transition-all cursor-pointer"><summary class="flex justify-between items-center font-bold text-slate-700 text-lg"><span>💰 Oferta Especial</span><span class="text-amber-500 group-open:rotate-180 transition-transform">▼</span></summary><div class="mt-6 text-gray-600 space-y-6 pl-4 border-l-4 border-amber-400"><p class="italic">"Oi, [Nome do Cliente]! Espero que esteja bem. Pensamos em você e decidimos oferecer uma condição especial em [Produto/Serviço] que você havia se interessado. Seria uma oportunidade exclusiva até [Data Limite]. Gostaria de saber mais detalhes?..."</p></div></details>
-                    <details class="group p-6 open:bg-slate-50 transition-all cursor-pointer"><summary class="flex justify-between items-center font-bold text-slate-700 text-lg"><span>💰 Feedback</span><span class="text-amber-500 group-open:rotate-180 transition-transform">▼</span></summary><div class="mt-6 text-gray-600 space-y-6 pl-4 border-l-4 border-amber-400"><p class="italic">"Olá, [Nome do Cliente], tudo bem? Aqui é [Seu Nome], da [Sua Empresa]. Vi que você se interessou por [Produto/Serviço] recentemente. Estamos sempre buscando melhorar e adoraríamos saber: há algo específico que podemos fazer para atender melhor às suas necessidades?..."</p></div></details>
-                    <details class="group p-6 open:bg-slate-50 transition-all cursor-pointer"><summary class="flex justify-between items-center font-bold text-slate-700 text-lg"><span>💰 Suporte Personalizado</span><span class="text-amber-500 group-open:rotate-180 transition-transform">▼</span></summary><div class="mt-6 text-gray-600 space-y-6 pl-4 border-l-4 border-amber-400"><p class="italic">"Olá, [Nome do Cliente]! Percebi que houve interesse em [Produto/Serviço] e gostaria de oferecer um suporte personalizado para você. Talvez haja dúvidas específicas ou detalhes que você queira discutir? Estou aqui para ajudar!"</p></div></details>  
-                 <details class="group p-6 open:bg-slate-50 transition-all cursor-pointer"><summary class="flex justify-between items-center font-bold text-slate-700 text-lg"><span>💰 50 SCRIPTS PARA VENDER MAIS</span><span class="text-amber-500 group-open:rotate-180 transition-transform">▼</span></summary><div class="mt-6 text-gray-600 space-y-6 pl-4 border-l-4 border-amber-400"><p class="italic">" https://docs.google.com/document/d/1MMQn50MnRyAmbeAqIWXO-cJN4Zax4fb6/edit?usp=sharing&ouid=104348418790374918774&rtpof=true&sd=true "</p></div></details>
-                    <details class="group p-6 open:bg-slate-50 transition-all cursor-pointer"><summary class="flex justify-between items-center font-bold text-slate-700 text-lg"><span>🤔 "SONDAGEM NIVEL HARD"</span><span class="text-amber-500 group-open:rotate-180 transition-transform">▼</span></summary><div class="mt-6 text-gray-600 space-y-6 pl-4 border-l-4 border-amber-400"><p class="italic">" https://docs.google.com/document/d/1wD5HosvQ75RImdbCW1qwKKoC1VeigkAW/edit?usp=sharing&ouid=104348418790374918774&rtpof=true&sd=true "</p></div></details>
-                     <details class="group p-6 open:bg-slate-50 transition-all cursor-pointer"><summary class="flex justify-between items-center font-bold text-slate-700 text-lg"><span>🤝 50 SCRIPTS OBJECOES</span><span class="text-amber-500 group-open:rotate-180 transition-transform">▼</span></summary><div class="mt-6 text-gray-600 space-y-6 pl-4 border-l-4 border-amber-400"><p class="italic">" https://docs.google.com/document/d/1IgzSQDlBk56LZIVeBxcZOlmyjtEPIh5h/edit?usp=sharing&ouid=104348418790374918774&rtpof=true&sd=true "</p></div></details>
-                     <details class="group p-6 open:bg-slate-50 transition-all cursor-pointer"><summary class="flex justify-between items-center font-bold text-slate-700 text-lg"><span>🎁 ROLE PLAY OBJECOES</span><span class="text-amber-500 group-open:rotate-180 transition-transform">▼</span></summary><div class="mt-6 text-gray-600 space-y-6 pl-4 border-l-4 border-amber-400"><p class="italic">" https://docs.google.com/document/d/1wH6lzqoXokeR2KVMFHreEhIDA9GRpr2l/edit?usp=sharing&ouid=104348418790374918774&rtpof=true&sd=true "</p></div></details>
-                <details class="group p-6 open:bg-slate-50 transition-all cursor-pointer"><summary class="flex justify-between items-center font-bold text-slate-700 text-lg"><span>🎁 ROLE PLAY SONDAGEM</span><span class="text-amber-500 group-open:rotate-180 transition-transform">▼</span></summary><div class="mt-6 text-gray-600 space-y-6 pl-4 border-l-4 border-amber-400"><p class="italic">" https://docs.google.com/document/d/11Eu4ZUgdbovOe59HCvUhNQyW0xbJ8gGk/edit?usp=sharing&ouid=104348418790374918774&rtpof=true&sd=true "</p></div></details>
-                </div>
+            <div class="card">
+                <h3>⚠️ Análise de Perdas</h3>
+                <div id="analisePerdas"><p>Preencha os dados...</p></div>
             </div>
-        </main>
+        </div>
+
+        <div id="config" class="tab-content">
+            <div class="card">
+                <h2>Configurações</h2>
+                <div class="input-group"><label>Nome</label><input type="text" id="configNome"></div>
+                <div class="input-group"><label>Unidade</label><input type="text" id="configOtica"></div>
+                <button class="btn-action" onclick="atualizarCadastroInterno()">Salvar Alterações</button>
+                
+                <hr style="margin: 30px 0;">
+                
+                <h3 style="color:var(--alert-red)">Zona de Reset</h3>
+                <p style="font-size:0.9rem;">O botão abaixo apaga <strong>TUDO</strong> e reinicia o app.</p>
+                <button class="btn-action btn-danger" onclick="apagarTudoReset()">⚠️ ZERAR TUDO (Reset Geral)</button>
+            </div>
+        </div>
+
+        <div id="treinamento" class="tab-content">
+            <div class="card"><h2>Treinamento</h2><p>Conteúdos da Universidade Ammo...</p></div>
+        </div>
+        <div id="resumo" class="tab-content">
+            <div class="card">
+                <h2>Relatório</h2>
+                <button class="btn-action btn-whatsapp" onclick="gerarWhatsapp()">📲 WhatsApp</button>
+            </div>
+        </div>
     </div>
 
-    <!-- LOGICA JS -->
     <script>
-        function switchTab(t){['view-dashboard','view-materials','view-summary'].forEach(i=>document.getElementById(i).classList.add('hidden'));['tab-dashboard','tab-materials','tab-summary'].forEach(i=>document.getElementById(i).className="flex-1 px-4 py-2 rounded-lg text-sm font-medium text-slate-500 hover:text-amber-600 transition-all whitespace-nowrap");document.getElementById(`view-${t}`).classList.remove('hidden');document.getElementById(`tab-${t}`).className="flex-1 px-4 py-2 rounded-lg text-sm font-bold bg-white shadow-sm text-amber-700 transition-all whitespace-nowrap";if(t==='summary')window.calculateSummary()}
-        
-        async function handleEnter(e){e.preventDefault();const n=document.getElementById('access-name').value.trim();const s=document.getElementById('access-store').value.trim();if(!n||!s){alert("Preencha tudo.");return}if(window.authReady===false&&confirm("Ainda conectando. Entrar offline?")===false)return;window.consultantName=n;window.storeName=s;localStorage.setItem('optical_consultant_name',n);localStorage.setItem('optical_store_name',s);document.getElementById('login-view').classList.add('hidden');document.getElementById('dashboard-view').classList.remove('hidden');document.getElementById('header-name').innerHTML=`${n} <span class="text-xs font-normal text-slate-400">| ${s}</span>`;await window.loadDayData(window.currentDayIndex)}
-        
-        function logout(){if(confirm("Sair?"))location.reload()}
+        const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwmhOPcpTlwmELntouLXFdPgcopIAi5gUjVbODFyyjR37_-9SlCjYdxWHxVyo7lcz46/exec'; 
 
-        // BOTOES DIAS
-        function renderDays(){const c=document.getElementById('days-container');c.innerHTML='';['Seg','Ter','Qua','Qui','Sex','Sáb'].forEach((d,i)=>{c.innerHTML+=`<button onclick="setDay(${i})" class="day-btn flex-1 min-w-[3rem] px-3 py-2.5 rounded-xl text-sm font-semibold transition-all" data-day="${i}">${d}</button>`})}
-        
-        window.setDay=async(i)=>{window.currentDayIndex=i;document.querySelectorAll('.day-btn').forEach(b=>{const a=parseInt(b.dataset.day)===i;b.className=`day-btn flex-1 min-w-[3rem] px-3 py-2.5 rounded-xl text-sm font-semibold transition-all ${a?'bg-amber-500 text-white shadow-lg transform scale-105':'text-slate-500 hover:bg-slate-50'}`});
-        // Atualiza missão
-        const m = missions[i % 6];
-        document.getElementById('mission-title').innerText = m.title;
-        document.getElementById('mission-main').innerText = m.main;
-        document.getElementById('mission-digital').innerText = m.dig;
-        
-        renderTimeline(getDailySchedule(i));
-        await window.loadDayData(i)}
-
-        // CRONOGRAMA & MISSÕES
-        const trainingTopics = [
-            { title: "Abertura da Venda", task: "Técnica de Abordagem Não-Invasiva", desc: "Ler script de saudação e praticar sorriso." },
-            { title: "Sondagem", task: "Perguntas Abertas vs Fechadas", desc: "Listar 3 perguntas para descobrir a dor do cliente." },
-            { title: "Demonstração", task: "Apresentação de Valor", desc: "Treinar manuseio na frente do cliente." },
-            { title: "CVBA", task: "Característica, Vantagem, Benefício", desc: "Aplicar CVBA em uma lente Multifocal." },
-            { title: "Objeção", task: "Matriz Preço/Prazo", desc: "Estudar 3 respostas para 'Está caro'." },
-            { title: "Fechamento", task: "Técnicas Ou/Ou", desc: "Treinar fechamento experimental." }
-        ];
-
-        function getDailySchedule(dayIndex) {
-            const topic = trainingTopics[dayIndex % 6]; 
-            return [
-                { time: "08:00 - 09:00", title: "Organização", tasks: ["Limpeza vitrines", "Conferir OS", "Definir Meta"] },
-                { time: "09:00 - 10:00", title: `Treinamento: ${topic.title}`, isTraining: true, tasks: [topic.task, topic.desc] },
-                { time: "10:00 - 11:00", title: "Digital", tasks: ["Postar Stories", "Responder Directs"] },
-                { time: "11:00 - 12:00", title: "CRM", tasks: ["Ligar Clientes", "Aniversariantes"] },
-                { time: "12:00 - 14:00", title: "Almoço", isBreak: true },
-                { time: "14:00 - 15:30", title: "Prospecção", tasks: ["Visitar Vizinhos", "Entregar Cartões"] },
-                { time: "15:30 - 17:30", title: "Salão", tasks: ["Atendimento", "Repor vitrine"] },
-                { time: "17:30 - 18:00", title: "Fechamento", tasks: ["Relatório", "Fechar caixa"] }
-            ];
-        }
-
-        const missions = [
-            { day: "Segunda", title: "Planejamento", main: "Ligar para 'indecisos'.", dig: "Story: Óculos Home Office" },
-            { day: "Terça", title: "Externo", main: "Visita Corporativa.", dig: "Reels: Lentes" },
-            { day: "Quarta", title: "Vitrine", main: "Trocar destaque.", dig: "Foto: Detalhe Premium" },
-            { day: "Quinta", title: "Ofertas", main: "Resgate antigo.", dig: "Enquete: Qual combina?" },
-            { day: "Sexta", title: "Fechamento", main: "Confirmar Agenda.", dig: "Vídeo: Limpeza" },
-            { day: "Sábado", title: "Vendas", main: "Movimento Loja.", dig: "Story: Bastidores" },
-        ];
-
-        function renderTimeline(scheduleData){
-            const c=document.getElementById('timeline-container');
-            if(!scheduleData) scheduleData = getDailySchedule(0);
-            c.innerHTML='<div class="timeline-line"></div>';
-            scheduleData.forEach((block, idx) => {
-                const isBreak = block.isBreak ? 'bg-slate-100 opacity-70' : 'bg-white';
-                const isTraining = block.isTraining ? 'border-l-4 border-amber-500 bg-amber-50' : 'border-slate-100';
-                let iconColor = block.isTraining ? 'bg-amber-500' : 'bg-amber-500';
-                let html = `<div class="relative z-10 mb-6 pl-6"><div class="absolute left-0 w-3 h-3 ${iconColor} rounded-full border-2 border-white shadow mt-1.5" style="margin-left: 0.8rem;"></div><div class="${isBreak} ${isTraining} rounded-2xl border p-5 shadow-sm"><div class="flex justify-between items-center mb-3"><span class="text-xs font-bold text-amber-600 bg-white px-2.5 py-1 rounded-lg border border-slate-100">${block.time}</span><h4 class="font-bold text-slate-700">${block.title}</h4></div>`;
-                
-                if (block.tasks) {
-                    html += `<ul class="space-y-3">`;
-                    block.tasks.forEach((task, tIdx) => {
-                         html += `<li class="flex items-start gap-3"><input type="checkbox" id="task-${idx}-${tIdx}" class="checkbox-custom mt-0.5 shrink-0" onclick="handleTaskClick(event)"><span class="text-sm text-slate-600 leading-snug font-medium">${task}</span></li>`;
-                    });
-                    html += `</ul>`;
-                }
-                html += `</div></div>`;
-                c.insertAdjacentHTML('beforeend', html);
-            });
-        }
-
-        // CALCULOS DE NEGOCIO
-        window.handleMetricChange = function() {
-            const grade = parseInt(document.getElementById('input-prod-grade').value)||0;
-            const sun = parseInt(document.getElementById('input-prod-sun').value)||0;
-            const kit = parseInt(document.getElementById('input-prod-kit').value)||0;
-            const ins = parseInt(document.getElementById('input-prod-insurance').value)||0;
-            
-            // Fluxo
-            const ent = parseInt(document.getElementById('input-flow-entries').value)||0;
-            const conv = parseInt(document.getElementById('input-flow-conversions').value)||0;
-            if(ent>0) document.getElementById('conversion-display').innerText=((conv/ent)*100).toFixed(1)+'%';
-
-            // Meta Inteligente
-            const g = parseFloat(document.getElementById('input-goal').value)||0;
-            const accumulated = parseFloat(document.getElementById('input-sales').value)||0;
-            const daily = parseFloat(document.getElementById('input-daily-sales').value)||0;
-
-            const d = parseInt(document.getElementById('input-days-left').value)||20;
-            const rem = Math.max(0, g-accumulated);
-            document.getElementById('remaining-goal-display').innerText=`R$ ${rem.toLocaleString()}`;
-            document.getElementById('daily-needed-display').innerText=`R$ ${d>0?(rem/d).toLocaleString():0}`;
-
-            // Chart
-            chart.data.datasets[0].data = [accumulated, g];
-            chart.update();
-
-            // Salvar
-            clearTimeout(window.saveTimer);
-            window.saveTimer = setTimeout(() => {
-                const data = {
-                    sales: accumulated,
-                    dailySales: daily,
-                    goal: g, daysLeft: d,
-                    leads: document.getElementById('input-leads').value,
-                    appointments: document.getElementById('input-appointments').value,
-                    flowEntries: ent, flowConversions: conv,
-                    prodSun: sun, prodGrade: grade, prodContact: document.getElementById('input-prod-contact').value,
-                    prodKit: kit, prodChain: document.getElementById('input-prod-chain').value,
-                    prodKids: document.getElementById('input-prod-kids').value,
-                    prodInsurance: ins
-                };
-                window.saveData(data);
-            }, 1000);
-        };
-
-        // CARREGAR DADOS
-        window.loadDayData = async (i) => {
-            const data = await window.fetchData(i);
-            const ids = ['input-sales','input-goal','input-days-left','input-leads','input-appointments','input-flow-entries','input-flow-conversions',
-                        'input-prod-sun','input-prod-grade','input-prod-contact','input-prod-kit','input-prod-chain','input-prod-kids','input-prod-insurance'];
-            ids.forEach(k => document.getElementById(k).value = data ? (data[k.replace('input-','')] || (k==='input-goal'?40000:0)) : (k==='input-goal'?40000:0));
-            if(!data) document.getElementById('input-days-left').value = 20;
-            
-            if(data && data.tasks) {
-                 Object.keys(data.tasks).forEach(key => {
-                    const cb = document.getElementById(`task-${key}`);
-                    if(cb) cb.checked = data.tasks[key];
-                 });
-            } else {
-                 document.querySelectorAll('.checkbox-custom').forEach(c => c.checked = false);
-            }
-
-            window.handleMetricChange();
-        };
-        
-        window.handleTaskClick = function(e) {
-            const allTasks = {};
-            document.querySelectorAll('.checkbox-custom').forEach(cb => {
-                const idParts = cb.id.replace('task-', '');
-                allTasks[idParts] = cb.checked;
-            });
-            window.saveData({ tasks: allTasks });
-        };
-
-        // INICIO
-        let chart;
         document.addEventListener('DOMContentLoaded', () => {
-            renderDays();
-            renderTimeline(getDailySchedule(0));
-            const ctx = document.getElementById('performanceChart').getContext('2d');
-            chart = new Chart(ctx, { type: 'bar', data: { labels: ['Acumulado', 'Meta'], datasets: [{ data: [0,0], backgroundColor: ['#f59e0b', '#e2e8f0'], borderRadius: 8 }] }, options: { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true }, x: { grid: { display: false } } } } });
-            
-            const n = localStorage.getItem('optical_consultant_name');
-            const st = localStorage.getItem('optical_store_name');
-            if(n) document.getElementById('access-name').value = n;
-            if(st) document.getElementById('access-store').value = st;
-            
-            const m = missions[0];
-            document.getElementById('mission-title').innerText = m.title;
-            document.getElementById('mission-main').innerText = m.main;
-            document.getElementById('mission-digital').innerText = m.dig;
-            
-            window.currentDayIndex = 0;
+            verificarLogin();
+            carregarDadosLocais();
         });
 
-        // RESUMO (SOMA GERAL)
-        window.calculateSummary = () => {
-            const h = JSON.parse(localStorage.getItem(`history_${window.consultantName.replace(/\s+/g,'_').toLowerCase()}`) || '{}');
-            let tSales=0, tFlow=0, tSun=0, tKit=0, tInsQtd=0;
-            let accSunMeta=0, accSunReal=0;
-            let accKitMeta=0, accKitReal=0;
-            let accInsMeta=0, accInsReal=0;
-            let accFlowLost=0;
+        function openTab(name) {
+            document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            document.getElementById(name).classList.add('active');
+            event.target.classList.add('active');
+        }
 
-            Object.values(h).forEach(i => {
-                // USA O NOVO CAMPO DIARIO PARA A SOMA
-                tSales += parseFloat(i.dailySales)||0;
-                
-                const ent = parseInt(i.flowEntries) || 0;
-                const conv = parseInt(i.flowConversions) || 0;
-                const flowLostDay = Math.max(0, ent - conv);
-                tFlow += flowLostDay * 399;
-                accFlowLost += flowLostDay;
-
-                const grade = parseInt(i.prodGrade) || 0;
-                const sun = parseInt(i.prodSun) || 0;
-                const kit = parseInt(i.prodKit) || 0;
-                const ins = parseInt(i.prodInsurance) || 0;
-                
-                const sunMetaDay = grade;
-                accSunMeta += sunMetaDay;
-                accSunReal += sun;
-                tSun += Math.max(0, sunMetaDay - sun) * 189;
-
-                const glassesDay = grade + sun;
-                accKitMeta += glassesDay;
-                accKitReal += kit;
-                tKit += Math.max(0, glassesDay - kit) * 20;
-
-                accInsMeta += glassesDay;
-                accInsReal += ins;
-                tInsQtd += Math.max(0, glassesDay - ins);
-            });
-            
-            const totalLost = tFlow + tSun + tKit;
-            
-            if(document.getElementById('sum-total-sales')) {
-                document.getElementById('sum-total-sales').innerText = tSales.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'});
-                document.getElementById('sum-total-lost').innerText = totalLost.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'});
-                document.getElementById('sum-lost-flow').innerText = tFlow.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'});
-                document.getElementById('sum-lost-sun').innerText = tSun.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'});
-                document.getElementById('sum-lost-kit').innerText = tKit.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'});
-                document.getElementById('sum-lost-ins').innerText = `${tInsQtd} un`;
-
-                // CARDS (Resumo)
-                document.getElementById('pot-flow-lost').innerText = accFlowLost;
-                document.getElementById('pot-flow-revenue').innerText = `R$ ${tFlow.toLocaleString('pt-BR', {minimumFractionDigits:0})}`;
-                
-                document.getElementById('pot-sun-target').innerText = accSunMeta;
-                document.getElementById('pot-sun-actual').innerText = accSunReal;
-                const gapSun = Math.max(0, accSunMeta - accSunReal);
-                document.getElementById('pot-sun-gap-qtd').innerText = `Gap: ${gapSun}`;
-                document.getElementById('pot-sun-revenue').innerText = `R$ ${tSun.toLocaleString('pt-BR', {minimumFractionDigits:0})}`;
-
-                document.getElementById('pot-kit-target').innerText = accKitMeta;
-                document.getElementById('pot-kit-actual').innerText = accKitReal;
-                const gapKit = Math.max(0, accKitMeta - accKitReal);
-                document.getElementById('pot-kit-gap-qtd').innerText = `Gap: ${gapKit}`;
-                document.getElementById('pot-kit-revenue').innerText = `R$ ${tKit.toLocaleString('pt-BR', {minimumFractionDigits:0})}`;
-
-                document.getElementById('pot-ins-target').innerText = accInsMeta;
-                document.getElementById('pot-ins-actual').innerText = accInsReal;
-                const gapIns = Math.max(0, accInsMeta - accInsReal);
-                document.getElementById('pot-ins-gap-qtd').innerText = `Gap: ${gapIns}`;
+        // --- LOGIN & DADOS ---
+        function verificarLogin() {
+            const user = localStorage.getItem('ammo_consultor');
+            if (user) {
+                document.getElementById('login-screen').style.display = 'none';
+                document.getElementById('main-app').style.display = 'block';
+                document.getElementById('displayNomeUser').innerText = user;
+                document.getElementById('displayOticaUser').innerText = localStorage.getItem('ammo_otica');
+                document.getElementById('configNome').value = user;
+                document.getElementById('configOtica').value = localStorage.getItem('ammo_otica');
+            } else {
+                document.getElementById('login-screen').style.display = 'flex';
+                document.getElementById('main-app').style.display = 'none';
             }
-        };
+        }
+
+        function realizarLogin() {
+            const n = document.getElementById('loginConsultor').value;
+            const o = document.getElementById('loginOtica').value;
+            if(n && o) {
+                localStorage.setItem('ammo_consultor', n);
+                localStorage.setItem('ammo_otica', o);
+                verificarLogin();
+            } else alert('Preencha tudo.');
+        }
+
+        function atualizarCadastroInterno() {
+            localStorage.setItem('ammo_consultor', document.getElementById('configNome').value);
+            localStorage.setItem('ammo_otica', document.getElementById('configOtica').value);
+            alert('Atualizado!');
+            location.reload();
+        }
+
+        function apagarTudoReset() {
+            if(confirm("CONFIRMA ZERAR O SISTEMA?\n\n1. Login será apagado.\n2. Meta será apagada.\n3. ACUMULADO TOTAL será zerado.")) {
+                document.getElementById('viewAcumulado').innerText = 'R$ 0,00';
+                localStorage.clear(); 
+                location.reload();    
+            }
+        }
+
+        // --- CÁLCULOS FINANCEIROS ---
+        function carregarDadosLocais() {
+            if(localStorage.getItem('ammo_meta')) document.getElementById('metaMensal').value = localStorage.getItem('ammo_meta');
+            
+            fetch(GOOGLE_SCRIPT_URL).then(r=>r.json()).then(d=>{
+                localStorage.setItem('ammo_acumulado_sheet', d.acumulado);
+                atualizarCalculosMeta();
+            }).catch(e=>console.log(e));
+        }
+
+        // >>>>>> NOVA FUNÇÃO: DIAS ÚTEIS (SEG A SAB) <<<<<<
+        function calcularDiasUteisRestantes() {
+            let hoje = new Date();
+            let ano = hoje.getFullYear();
+            let mes = hoje.getMonth();
+            let ultimoDia = new Date(ano, mes + 1, 0).getDate(); // Último dia do mês atual
+            
+            let uteis = 0;
+            
+            // Começa a contar de hoje até o fim do mês
+            for (let dia = hoje.getDate(); dia <= ultimoDia; dia++) {
+                let dataCheck = new Date(ano, mes, dia);
+                let diaSemana = dataCheck.getDay(); // 0 = Domingo, 6 = Sábado
+                
+                // Se não for Domingo (0), conta como dia de venda
+                if (diaSemana !== 0) {
+                    uteis++;
+                }
+            }
+            return uteis > 0 ? uteis : 1; // Evita divisão por zero
+        }
+
+        function atualizarCalculosMeta() {
+            const meta = parseFloat(document.getElementById('metaMensal').value || 0);
+            localStorage.setItem('ammo_meta', meta);
+            
+            const hoje = parseFloat(document.getElementById('vendaDia').value || 0);
+            const acumuladoHistorico = parseFloat(localStorage.getItem('ammo_acumulado_sheet') || 0);
+            
+            // Acumulado Atual = O que já estava salvo + O que vendi hoje
+            const totalAtual = acumuladoHistorico + hoje;
+            const faltante = meta - totalAtual;
+            
+            // Exibição
+            document.getElementById('viewAcumulado').innerText = `R$ ${totalAtual.toLocaleString('pt-BR',{minimumFractionDigits:2})}`;
+            document.getElementById('viewFaltante').innerText = `R$ ${(faltante > 0 ? faltante : 0).toLocaleString('pt-BR',{minimumFractionDigits:2})}`;
+            
+            // >>>>>> CÁLCULO DA META DIÁRIA <<<<<<
+            if (faltante > 0) {
+                const diasRestantes = calcularDiasUteisRestantes();
+                const metaDiaria = faltante / diasRestantes;
+                document.getElementById('metaDiariaSug').innerText = `R$ ${metaDiaria.toLocaleString('pt-BR',{minimumFractionDigits:2})}`;
+            } else {
+                document.getElementById('metaDiariaSug').innerText = "META BATIDA! 🏆";
+            }
+        }
+
+        // --- CÁLCULOS PERDAS E TEXTO ---
+        function calcTudo() {
+            const atend = parseFloat(document.getElementById('clientesAtendidos').value||0);
+            const compr = parseFloat(document.getElementById('clientesCompraram').value||0);
+            const naoComp = atend - compr;
+            const financeiro = (naoComp > 0) ? naoComp * 500 : 0;
+            
+            const grau = parseInt(document.getElementById('prodGrau').value||0);
+            const solar = parseInt(document.getElementById('prodSolar').value||0);
+            const kit = parseInt(document.getElementById('prodKit').value||0);
+            const grife = parseInt(document.getElementById('prodArmacaoGrife').value||0);
+            const seguro = parseInt(document.getElementById('prodSeguro').value||0);
+            
+            let html = [];
+            if(naoComp > 0) html.push(`<div class="loss-box">📉 ${naoComp} clientes perdidos. Prejuízo: R$ ${financeiro}</div>`);
+            
+            if(grife < grau) html.push(`<div class="loss-box">👓 Falta vender ${grau - grife} Grifes.</div>`);
+            if(kit < (grau+solar)) html.push(`<div class="loss-box">🧴 Falta vender ${grau+solar - kit} Kits.</div>`);
+            if(seguro < (grau+solar)) html.push(`<div class="loss-box">🛡️ Falta vender ${grau+solar - seguro} Seguros.</div>`);
+            
+            document.getElementById('analisePerdas').innerHTML = html.length ? html.join('') : '<div class="success-box">⭐ Parabéns!</div>';
+        }
+
+        function obterTextoPerdasLimpo() {
+            const atend = parseInt(document.getElementById('clientesAtendidos').value||0);
+            const compr = parseInt(document.getElementById('clientesCompraram').value||0);
+            const naoComp = atend - compr;
+            
+            const grau = parseInt(document.getElementById('prodGrau').value||0);
+            const solar = parseInt(document.getElementById('prodSolar').value||0);
+            const kit = parseInt(document.getElementById('prodKit').value||0);
+            const grife = parseInt(document.getElementById('prodArmacaoGrife').value||0);
+            const seguro = parseInt(document.getElementById('prodSeguro').value||0);
+
+            let lista = [];
+            if (naoComp > 0) lista.push(`${naoComp} clientes perdidos`);
+            if (grife < grau) lista.push(`${grau - grife} Grifes`);
+            if (kit < (grau+solar)) lista.push(`${grau+solar - kit} Kits`);
+            if (seguro < (grau+solar)) lista.push(`${grau+solar - seguro} Seguros`);
+
+            return lista.length > 0 ? lista.join(", ") : "Nenhuma perda";
+        }
+
+        function enviarDados() {
+            const data = {
+                consultor: localStorage.getItem('ammo_consultor'),
+                meta: document.getElementById('metaMensal').value || 0,
+                vendasDia: document.getElementById('vendaDia').value || 0,
+                clientesAtendidos: document.getElementById('clientesAtendidos').value || 0,
+                clientesCompraram: document.getElementById('clientesCompraram').value || 0,
+                produtos: {
+                    grau: document.getElementById('prodGrau').value || 0,
+                    solar: document.getElementById('prodSolar').value || 0,
+                    infantil: document.getElementById('prodInfantil').value || 0,
+                    armacaoAmmo: document.getElementById('prodArmacaoAmmo').value || 0,
+                    armacaoGrife: document.getElementById('prodArmacaoGrife').value || 0,
+                    lentes: document.getElementById('prodLentes').value || 0,
+                    kit: document.getElementById('prodKit').value || 0,
+                    corrente: document.getElementById('prodCorrente').value || 0,
+                    seguro: document.getElementById('prodSeguro').value || 0
+                },
+                calculados: {
+                    acumulado: parseFloat(localStorage.getItem('ammo_acumulado_sheet') || 0) + parseFloat(document.getElementById('vendaDia').value || 0),
+                    perdaDinheiro: (parseInt(document.getElementById('clientesAtendidos').value || 0) - parseInt(document.getElementById('clientesCompraram').value || 0)) * 500,
+                    itensPerdidos: obterTextoPerdasLimpo()
+                }
+            };
+
+            const btn = document.querySelector('.btn-action');
+            btn.innerText = "⏳ Enviando...";
+            btn.disabled = true;
+
+            fetch(GOOGLE_SCRIPT_URL, {
+                method: 'POST',
+                mode: 'no-cors',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            }).then(() => {
+                alert('✅ Dados salvos!');
+                localStorage.setItem('ammo_acumulado_sheet', data.calculados.acumulado);
+                document.querySelectorAll('.input-dia').forEach(i => i.value = '');
+                calcTudo();
+                
+                btn.innerText = "💾 Salvar e Enviar Planilha";
+                btn.disabled = false;
+            }).catch(err => {
+                alert('❌ Erro: ' + err);
+                btn.innerText = "💾 Salvar e Enviar Planilha";
+                btn.disabled = false;
+            });
+        }
+        
+        function gerarWhatsapp() {
+            const nome = localStorage.getItem('ammo_consultor');
+            const venda = document.getElementById('vendaDia').value;
+            window.open(`https://wa.me/?text=Relatorio ${nome}: Venda R$ ${venda}`, '_blank');
+        }
     </script>
 </body>
 </html>
-
-
-
-
-
-
-
-
