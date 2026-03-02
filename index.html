@@ -3,388 +3,257 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Painel Ammo</title>
+    <title>Ammo Performance - Painel</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
-        :root { 
-            --ammo-gold: #D4AF37; 
-            --ammo-black: #000000; 
-            --ammo-dark-gray: #1a1a1a;
-            --ammo-bg: #f4f4f4; 
-            --alert-red: #d9534f;
-            --success-green: #28a745;
-        }
-        body { font-family: 'Segoe UI', sans-serif; margin: 0; background: var(--ammo-bg); color: var(--ammo-dark-gray); padding-bottom: 50px; }
-        
-        /* TELA LOGIN */
-        #login-screen {
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background-color: var(--ammo-black); z-index: 9999;
-            display: flex; justify-content: center; align-items: center; flex-direction: column; color: var(--ammo-gold);
-        }
-        .login-box { width: 80%; max-width: 400px; text-align: center; padding: 30px; border: 2px solid var(--ammo-gold); border-radius: 10px; background: var(--ammo-dark-gray); }
-        .login-input { width: 100%; padding: 15px; margin-bottom: 15px; border: 1px solid #444; border-radius: 5px; background: #333; color: white; box-sizing: border-box; }
-        .btn-login { width: 100%; padding: 15px; background-color: var(--ammo-gold); color: var(--ammo-black); font-weight: bold; border: none; border-radius: 5px; cursor: pointer; }
-
-        /* APP */
-        #main-app { display: none; }
-        .tabs { display: flex; background: var(--ammo-black); padding: 10px; overflow-x: auto; position: sticky; top: 0; z-index: 100; }
-        .tab-btn { background: none; border: none; color: white; padding: 12px 20px; cursor: pointer; font-weight: bold; white-space: nowrap; }
-        .tab-btn.active { border-bottom: 4px solid var(--ammo-gold); color: var(--ammo-gold); }
-        
-        .tab-content { display: none; padding: 20px; max-width: 600px; margin: 0 auto; }
-        .tab-content.active { display: block; animation: fadeIn 0.3s; }
-        @keyframes fadeIn { from { opacity:0; } to { opacity:1; } }
-
-        .card { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); margin-bottom: 20px; }
+        :root { --primary: #1a2a3a; --gold: #D4AF37; --success: #27ae60; --danger: #d9534f; --bg: #f4f7f6; --white: #ffffff; }
+        body { font-family: 'Segoe UI', sans-serif; margin: 0; background: var(--bg); color: #333; padding-bottom: 30px; }
+        #login-screen { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: var(--primary); z-index: 9999; display: flex; justify-content: center; align-items: center; }
+        .login-box { background: var(--white); padding: 40px; border-radius: 12px; text-align: center; width: 90%; max-width: 350px; }
+        header { background: var(--primary); color: white; padding: 20px; text-align: center; }
+        .tabs { display: flex; background: var(--white); border-bottom: 1px solid #ddd; position: sticky; top: 0; z-index: 100; justify-content: center; }
+        .tab-btn { background: none; border: none; padding: 15px 25px; cursor: pointer; font-weight: 600; color: #666; font-size: 0.85rem; }
+        .tab-btn.active { color: var(--gold); border-bottom: 3px solid var(--gold); }
+        .container { max-width: 600px; margin: 20px auto; padding: 0 15px; }
+        .card { background: var(--white); padding: 20px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-bottom: 20px; }
+        .card h3 { margin-top: 0; font-size: 1.1rem; color: var(--primary); border-bottom: 1px solid #eee; padding-bottom: 10px; margin-bottom: 15px; }
+        .points-display { text-align: center; }
+        .points-val { font-size: 2.8rem; font-weight: bold; color: var(--primary); }
+        .progress-container { background: #eee; height: 12px; border-radius: 10px; margin: 15px 0; overflow: hidden; }
+        .progress-bar { background: var(--gold); height: 100%; width: 0%; transition: width 1s ease; }
+        .progress-bar-global { background: var(--primary); height: 100%; width: 0%; transition: width 1s ease; }
         .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
-        .input-group { margin-bottom: 15px; }
-        label { display: block; margin-bottom: 6px; font-weight: 600; font-size: 0.9rem; }
-        input { width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 8px; box-sizing: border-box; }
-        
-        .btn-action { width: 100%; background: var(--ammo-black); color: white; padding: 14px; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; margin-top: 10px; }
-        .btn-whatsapp { background: #25D366; }
-        .btn-danger { background: var(--alert-red); margin-top: 20px; border: 2px solid #a00; }
-        
-        .metric-box { background: #fff; border: 1px solid #eee; padding: 15px; text-align: center; border-radius: 8px; }
-        .metric-val { font-size: 1.4rem; font-weight: 800; color: var(--ammo-black); }
-        
-        .daily-target-box { background-color: #fffde7; border: 2px solid var(--ammo-gold); padding: 15px; text-align: center; border-radius: 8px; margin-top: 15px; }
-        .daily-target-val { font-size: 1.6rem; color: #d89e00; font-weight: 900; }
-        
-        .loss-box { background-color: #fff5f5; border-left: 4px solid var(--alert-red); padding: 15px; margin-bottom: 5px; }
-        .success-box { background-color: #f0fff4; border-left: 4px solid var(--success-green); padding: 15px; color: var(--success-green); font-weight: bold; }
+        label { display: block; font-size: 0.8rem; font-weight: 600; margin-bottom: 5px; color: #555; }
+        input { width: 100%; padding: 12px; border: 1px solid #ccc; border-radius: 6px; box-sizing: border-box; }
+        .btn { width: 100%; padding: 15px; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 1rem; }
+        .btn-main { background: var(--primary); color: white; margin-top: 15px; }
+        .loss-item { background: #fff5f5; border-left: 4px solid var(--danger); padding: 10px; margin-bottom: 8px; font-size: 0.85rem; color: #a94442; }
+        .success-msg { color: var(--success); font-weight: bold; text-align: center; padding: 10px; }
+        #main-app { display: none; }
     </style>
 </head>
 <body>
 
     <div id="login-screen">
         <div class="login-box">
-            <h2 style="color:var(--ammo-gold); margin-top:0;">PAINEL DO CONSULTOR</h2>
-            <p>Alta Performance</p>
-            <input type="text" id="loginConsultor" class="login-input" placeholder="Seu Nome">
-            <input type="text" id="loginOtica" class="login-input" placeholder="Sua Unidade">
-            <button class="btn-login" onclick="realizarLogin()">ENTRAR</button>
+            <h2 style="margin-top:0;">Acesso Ammo</h2>
+            <input type="text" id="loginConsultor" placeholder="Seu Nome" class="login-input" style="width:100%; padding:12px; margin-bottom:10px; border-radius:6px; border:1px solid #ddd;">
+            <input type="text" id="loginOtica" placeholder="Sua Unidade" class="login-input" style="width:100%; padding:12px; margin-bottom:15px; border-radius:6px; border:1px solid #ddd;">
+            <button class="btn btn-main" onclick="realizarLogin()">ENTRAR</button>
         </div>
     </div>
 
     <div id="main-app">
-        <div class="tabs">
-            <button class="tab-btn active" onclick="openTab('dashboard')">Painel Diário</button>
-            <button class="tab-btn" onclick="openTab('config')">Configurações</button>
-            <button class="tab-btn" onclick="openTab('treinamento')">Treinamento</button>
-            <button class="tab-btn" onclick="openTab('resumo')">Relatórios</button>
-        </div>
+        <header>
+            <h1 style="margin:0; font-size:1.3rem;">Olá, <span id="uNomeHeader"></span></h1>
+            <small id="uOticaHeader"></small>
+        </header>
 
-        <div id="dashboard" class="tab-content active">
-            <div style="margin-bottom: 20px; color: #555;">
-                Consultor: <strong id="displayNomeUser">...</strong> | <span id="displayOticaUser">...</span>
-            </div>
+        <nav class="tabs">
+            <button class="tab-btn active" onclick="openTab(event, 'aba-vendas')">DIÁRIO</button>
+            <button class="tab-btn" onclick="openTab(event, 'aba-global')">META EQUIPE</button>
+            <button class="tab-btn" onclick="openTab(event, 'aba-perfil')">PERFIL</button>
+        </nav>
 
-            <div class="card">
-                <h3>🎯 Meta Mensal</h3>
-                <div class="input-group">
-                    <label>Sua Meta (R$)</label>
-                    <input type="number" id="metaMensal" placeholder="Defina sua meta..." oninput="atualizarCalculosMeta()">
-                </div>
-                <div class="grid-2">
-                    <div class="metric-box">
-                        <div class="metric-val" id="viewAcumulado">R$ 0,00</div>
-                        <small>Seu Acumulado</small>
-                    </div>
-                    <div class="metric-box">
-                        <div class="metric-val" id="viewFaltante" style="color:var(--alert-red)">R$ 0,00</div>
-                        <small>Falta para Meta</small>
+        <div class="container">
+            <div id="aba-vendas" class="tab-content">
+                <div class="card">
+                    <h3>Meus Pontos (Qualificação: 30.000)</h3>
+                    <div class="points-display">
+                        <div class="points-val" id="viewPontos">0</div>
+                        <div class="progress-container"><div id="bar-points" class="progress-bar"></div></div>
+                        <small id="txt-falta" style="color: var(--gold); font-weight: bold;"></small>
                     </div>
                 </div>
 
-                <div class="daily-target-box">
-                    <small style="color:#666; font-weight:bold; text-transform:uppercase;">Sua Meta Diária Necessária</small>
-                    <div class="daily-target-val" id="metaDiariaSug">R$ 0,00</div>
-                    <small style="color:#888; font-size:0.8rem;">(Segunda a Sábado)</small>
+                <div class="card">
+                    <h3>Metas e Acumulado</h3>
+                    <div class="input-group"><label>Meta Mensal (R$)</label><input type="number" id="metaMensal" placeholder="0,00" oninput="calcTudo()"></div>
+                    <div class="grid-2" style="margin-top:15px;">
+                        <div style="text-align:center;"><label>Acumulado</label><div id="viewAcumulado" style="font-weight:bold;">R$ 0</div></div>
+                        <div style="text-align:center;"><label>Meta Diária (26d)</label><div id="metaDiariaSug" style="font-weight:bold; color:var(--success);">R$ 0</div></div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h3>Registro Diário</h3>
+                    <div class="grid-2" style="margin-bottom:15px;">
+                        <div><label>Atendidos</label><input type="number" id="atendidos" oninput="calcTudo()"></div>
+                        <div><label>Compraram</label><input type="number" id="compraram" oninput="calcTudo()"></div>
+                    </div>
+                    <label>Venda Realizada Hoje (R$)</label>
+                    <input type="number" id="vendaDia" oninput="calcTudo()" style="font-weight:bold; border-color:var(--gold);">
+                    
+                    <h4 style="margin:20px 0 10px 0; font-size:0.9rem;">Produtos (Regra 1:1)</h4>
+                    <div class="grid-2">
+                        <input type="number" id="pGrau" placeholder="Óculos Grau" oninput="calcTudo()">
+                        <input type="number" id="pSolar" placeholder="Óculos Solar" oninput="calcTudo()">
+                        <input type="number" id="pKit" placeholder="Kits Limpa" oninput="calcTudo()">
+                        <input type="number" id="pGrife" placeholder="Armação Grife" oninput="calcTudo()">
+                        <input type="number" id="pSeguro" placeholder="Seguros" oninput="calcTudo()">
+                    </div>
+                    <button class="btn btn-main" onclick="enviarDados()">SALVAR REGISTRO</button>
+                </div>
+
+                <div class="card">
+                    <h3>Análise de Perdas</h3>
+                    <div id="analisePerdas">Aguardando dados...</div>
                 </div>
             </div>
 
-            <div class="card">
-                <h3>📊 Registro Diário</h3>
-                <div class="grid-2">
-                    <div class="input-group"><label>Atendidos</label><input type="number" id="clientesAtendidos" class="input-dia" oninput="calcTudo()"></div>
-                    <div class="input-group"><label>Compraram</label><input type="number" id="clientesCompraram" class="input-dia" oninput="calcTudo()"></div>
+            <div id="aba-global" class="tab-content" style="display:none;">
+                <div class="card" style="background: #fdf6e3; border: 1px solid var(--gold); text-align: center;">
+                    <h3>Meta Global da Equipe</h3>
+                    <div id="totalGlobalPts" style="font-size: 2.2rem; font-weight: bold; color: var(--primary);">0 / 300.000</div>
+                    <div class="progress-container" style="background: #e9ecef; height: 18px;"><div id="bar-global" class="progress-bar-global"></div></div>
+                    <p style="font-size: 0.85rem; color: #856404; font-weight: bold;">PRÊMIO R$ 1.000,00 LIBERADO AOS 300 MIL PONTOS!</p>
                 </div>
-                
-                <label>Sua Venda Hoje (R$)</label>
-                <input type="number" id="vendaDia" class="input-dia" placeholder="0.00" oninput="atualizarCalculosMeta()">
+            </div>
 
-                <h4 style="margin-top:20px; border-bottom:1px solid #eee;">Produtos</h4>
-                <div class="grid-2">
-                    <input type="number" id="prodGrau" class="input-dia" placeholder="Grau" oninput="calcTudo()">
-                    <input type="number" id="prodSolar" class="input-dia" placeholder="Solar" oninput="calcTudo()">
-                    <input type="number" id="prodInfantil" class="input-dia" placeholder="Infantil">
-                    <input type="number" id="prodArmacaoAmmo" class="input-dia" placeholder="Arm. Ammo">
-                    <input type="number" id="prodArmacaoGrife" class="input-dia" placeholder="Arm. Grife" oninput="calcTudo()">
-                    <input type="number" id="prodLentes" class="input-dia" placeholder="Lentes Ctt">
-                    <input type="number" id="prodKit" class="input-dia" placeholder="Kit Limpa" oninput="calcTudo()">
-                    <input type="number" id="prodCorrente" class="input-dia" placeholder="Corrente" oninput="calcTudo()">
-                    <input type="number" id="prodSeguro" class="input-dia" placeholder="Seguro" oninput="calcTudo()">
+            <div id="aba-perfil" class="tab-content" style="display:none;">
+                <div class="card">
+                    <p>Consultor: <b id="uNome"></b></p>
+                    <p>Unidade: <b id="uOtica"></b></p>
+                    <button class="btn" style="background:var(--danger); color:white; margin-top:20px;" onclick="logout()">SAIR / TROCAR USUÁRIO</button>
                 </div>
-                
-                <button class="btn-action" onclick="enviarDados()">💾 Salvar Meus Dados</button>
-            </div>
-
-            <div class="card">
-                <h3>⚠️ Análise de Perdas</h3>
-                <div id="analisePerdas"><p>Preencha os dados...</p></div>
-            </div>
-        </div>
-
-        <div id="config" class="tab-content">
-            <div class="card">
-                <h2>Meus Dados</h2>
-                <div class="input-group"><label>Nome</label><input type="text" id="configNome" disabled style="background:#eee;"></div>
-                <div class="input-group"><label>Unidade</label><input type="text" id="configOtica" disabled style="background:#eee;"></div>
-                <p style="font-size:0.8rem; color:#666;">Para alterar o nome, use o botão de sair abaixo.</p>
-                
-                <hr style="margin: 30px 0;">
-                <h3 style="color:var(--alert-red)">Sair</h3>
-                <button class="btn-action btn-danger" onclick="fazerLogout()">⚠️ SAIR (Trocar Usuário)</button>
-            </div>
-        </div>
-
-        <div id="treinamento" class="tab-content">
-            <div class="card"><h2>Treinamento</h2><p>Universidade Ammo...</p></div>
-        </div>
-        <div id="resumo" class="tab-content">
-            <div class="card">
-                <h2>Relatório</h2>
-                <button class="btn-action btn-whatsapp" onclick="gerarWhatsapp()">📲 WhatsApp</button>
             </div>
         </div>
     </div>
 
-    <script>
-        const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwmhOPcpTlwmELntouLXFdPgcopIAi5gUjVbODFyyjR37_-9SlCjYdxWHxVyo7lcz46/exec'; 
-        let currentConsultor = ""; // Variável global para saber quem está logado
+<script>
+    // --- INSIRA SEU URL ABAIXO ---
+    const API = 'https://script.google.com/macros/s/AKfycbzJNlqSSxP88vGCFrEk4Zi8DF87tgwz8E5t0DW8qiO-nxlkL-YQ7qtm1vGk705QPXpT8Q/exec'; 
 
-        document.addEventListener('DOMContentLoaded', () => {
-            verificarLogin();
-        });
+    let user = "";
 
-        function openTab(name) {
-            document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
-            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-            document.getElementById(name).classList.add('active');
-            event.target.classList.add('active');
+    document.addEventListener('DOMContentLoaded', checkLogin);
+
+    function openTab(e, name) {
+        document.querySelectorAll('.tab-content').forEach(t => t.style.display = 'none');
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        document.getElementById(name).style.display = 'block';
+        if(e) e.currentTarget.classList.add('active');
+    }
+
+    function checkLogin() {
+        user = localStorage.getItem('ammo_user');
+        if (user) {
+            document.getElementById('login-screen').style.display = 'none';
+            document.getElementById('main-app').style.display = 'block';
+            document.getElementById('uNome').innerText = user;
+            document.getElementById('uNomeHeader').innerText = user;
+            document.getElementById('uOticaHeader').innerText = localStorage.getItem('ammo_otica');
+            loadData();
         }
+    }
 
-        // --- SISTEMA DE LOGIN INDIVIDUAL ---
-        function verificarLogin() {
-            const user = localStorage.getItem('ammo_current_user');
-            const otica = localStorage.getItem('ammo_current_otica');
+    function realizarLogin() {
+        const n = document.getElementById('loginConsultor').value;
+        const o = document.getElementById('loginOtica').value;
+        if(n && o) { localStorage.setItem('ammo_user', n); localStorage.setItem('ammo_otica', o); location.reload(); }
+    }
+
+    async function loadData() {
+        if(!user) return;
+        try {
+            const r = await fetch(`${API}?consultor=${encodeURIComponent(user)}`);
+            const d = await r.json();
             
-            if (user && otica) {
-                currentConsultor = user; // Define quem é o usuário atual
-                document.getElementById('login-screen').style.display = 'none';
-                document.getElementById('main-app').style.display = 'block';
-                
-                document.getElementById('displayNomeUser').innerText = user;
-                document.getElementById('displayOticaUser').innerText = otica;
-                document.getElementById('configNome').value = user;
-                document.getElementById('configOtica').value = otica;
-                
-                // Carrega os dados ESPECÍFICOS deste usuário
-                carregarDadosUsuario(user);
-            } else {
-                document.getElementById('login-screen').style.display = 'flex';
-                document.getElementById('main-app').style.display = 'none';
-            }
-        }
-
-        function realizarLogin() {
-            const n = document.getElementById('loginConsultor').value.trim();
-            const o = document.getElementById('loginOtica').value.trim();
-            if(n && o) {
-                localStorage.setItem('ammo_current_user', n);
-                localStorage.setItem('ammo_current_otica', o);
-                verificarLogin();
-            } else alert('Preencha seu nome e unidade.');
-        }
-
-        function fazerLogout() {
-            if(confirm("Deseja sair e trocar de usuário?")) {
-                localStorage.removeItem('ammo_current_user');
-                localStorage.removeItem('ammo_current_otica');
-                location.reload();
-            }
-        }
-
-        // --- CARREGAMENTO DE DADOS (INDIVIDUALIZADO) ---
-        function carregarDadosUsuario(nomeUsuario) {
-            // 1. Carrega a META deste usuário específico (usando chave única)
-            const metaKey = `ammo_meta_${nomeUsuario}`;
-            if(localStorage.getItem(metaKey)) {
-                document.getElementById('metaMensal').value = localStorage.getItem(metaKey);
-            } else {
-                document.getElementById('metaMensal').value = '';
-            }
-
-            // 2. Busca no Google Sheets SOMENTE o acumulado deste usuário
-            // Adicionamos ?consultor=NOME na URL
-            const urlComParametro = `${GOOGLE_SCRIPT_URL}?consultor=${encodeURIComponent(nomeUsuario)}`;
+            localStorage.setItem(`acum_${user}`, d.acumulado);
+            localStorage.setItem(`pts_acum_${user}`, d.pontosTotais); // Pontos com bônus vindo da planilha
             
-            fetch(urlComParametro)
-            .then(r => r.json())
-            .then(d => {
-                // Salva o acumulado que veio da planilha numa variável temporária ou storage
-                // Usamos chave única também para evitar conflito
-                const acumKey = `ammo_acumulado_${nomeUsuario}`;
-                localStorage.setItem(acumKey, d.acumulado);
-                atualizarCalculosMeta();
-            })
-            .catch(e => console.log("Erro ao buscar dados:", e));
-        }
-
-        // --- CÁLCULOS ---
-        function calcularDiasUteisRestantes() {
-            let hoje = new Date();
-            let ano = hoje.getFullYear();
-            let mes = hoje.getMonth();
-            let ultimoDia = new Date(ano, mes + 1, 0).getDate();
-            let uteis = 0;
-            for (let dia = hoje.getDate(); dia <= ultimoDia; dia++) {
-                let d = new Date(ano, mes, dia);
-                if (d.getDay() !== 0) uteis++;
-            }
-            return uteis > 0 ? uteis : 1;
-        }
-
-        function atualizarCalculosMeta() {
-            if(!currentConsultor) return;
-
-            // Chaves únicas por usuário
-            const metaKey = `ammo_meta_${currentConsultor}`;
-            const acumKey = `ammo_acumulado_${currentConsultor}`;
-
-            // 1. Pega e Salva Meta
-            const meta = parseFloat(document.getElementById('metaMensal').value || 0);
-            localStorage.setItem(metaKey, meta);
+            const globalPts = d.totalEquipe || 0;
+            document.getElementById('totalGlobalPts').innerText = `${globalPts.toLocaleString()} / 300.000`;
+            document.getElementById('bar-global').style.width = Math.min((globalPts / 300000) * 100, 100) + '%';
             
-            // 2. Pega acumulado da planilha + venda digitada agora
-            const hoje = parseFloat(document.getElementById('vendaDia').value || 0);
-            const acumuladoHistorico = parseFloat(localStorage.getItem(acumKey) || 0);
-            
-            const totalAtual = acumuladoHistorico + hoje;
-            const faltante = meta - totalAtual;
-            
-            document.getElementById('viewAcumulado').innerText = `R$ ${totalAtual.toLocaleString('pt-BR',{minimumFractionDigits:2})}`;
-            document.getElementById('viewFaltante').innerText = `R$ ${(faltante > 0 ? faltante : 0).toLocaleString('pt-BR',{minimumFractionDigits:2})}`;
-            
-            if (faltante > 0) {
-                const dias = calcularDiasUteisRestantes();
-                const diaria = faltante / dias;
-                document.getElementById('metaDiariaSug').innerText = `R$ ${diaria.toLocaleString('pt-BR',{minimumFractionDigits:2})}`;
-            } else {
-                document.getElementById('metaDiariaSug').innerText = "META BATIDA! 🏆";
-            }
-        }
+            calcTudo();
+        } catch(e) { console.error("Erro na carga:", e); }
+    }
 
-        function calcTudo() {
-            // (Logica de perdas visual - igual ao anterior)
-            const atend = parseFloat(document.getElementById('clientesAtendidos').value||0);
-            const compr = parseFloat(document.getElementById('clientesCompraram').value||0);
-            const naoComp = atend - compr;
-            const financeiro = (naoComp > 0) ? naoComp * 500 : 0;
-            const grau = parseInt(document.getElementById('prodGrau').value||0);
-            const solar = parseInt(document.getElementById('prodSolar').value||0);
-            const kit = parseInt(document.getElementById('prodKit').value||0);
-            const grife = parseInt(document.getElementById('prodArmacaoGrife').value||0);
-            const seguro = parseInt(document.getElementById('prodSeguro').value||0);
-            
-            let html = [];
-            if(naoComp > 0) html.push(`<div class="loss-box">📉 ${naoComp} clientes perdidos. Prejuízo: R$ ${financeiro}</div>`);
-            if(grife < grau) html.push(`<div class="loss-box">👓 Falta vender ${grau - grife} Grifes.</div>`);
-            if(kit < (grau+solar)) html.push(`<div class="loss-box">🧴 Falta vender ${grau+solar - kit} Kits.</div>`);
-            if(seguro < (grau+solar)) html.push(`<div class="loss-box">🛡️ Falta vender ${grau+solar - seguro} Seguros.</div>`);
-            document.getElementById('analisePerdas').innerHTML = html.length ? html.join('') : '<div class="success-box">⭐ Parabéns!</div>';
-        }
-
-        function obterTextoPerdasLimpo() {
-            // (Mesma logica de texto limpo)
-            const atend = parseInt(document.getElementById('clientesAtendidos').value||0);
-            const compr = parseInt(document.getElementById('clientesCompraram').value||0);
-            const naoComp = atend - compr;
-            const grau = parseInt(document.getElementById('prodGrau').value||0);
-            const solar = parseInt(document.getElementById('prodSolar').value||0);
-            const kit = parseInt(document.getElementById('prodKit').value||0);
-            const grife = parseInt(document.getElementById('prodArmacaoGrife').value||0);
-            const seguro = parseInt(document.getElementById('prodSeguro').value||0);
-            let lista = [];
-            if (naoComp > 0) lista.push(`${naoComp} clientes perdidos`);
-            if (grife < grau) lista.push(`${grau - grife} Grifes`);
-            if (kit < (grau+solar)) lista.push(`${grau+solar - kit} Kits`);
-            if (seguro < (grau+solar)) lista.push(`${grau+solar - seguro} Seguros`);
-            return lista.length > 0 ? lista.join(", ") : "Nenhuma perda";
-        }
-
-        function enviarDados() {
-            const btn = document.querySelector('.btn-action');
-            btn.innerText = "⏳ Enviando...";
-            btn.disabled = true;
-
-            const vendaHoje = parseFloat(document.getElementById('vendaDia').value || 0);
-            const acumKey = `ammo_acumulado_${currentConsultor}`;
-            const acumuladoHistorico = parseFloat(localStorage.getItem(acumKey) || 0);
-
-            const data = {
-                consultor: currentConsultor, // Usa o usuário logado
-                meta: document.getElementById('metaMensal').value || 0,
-                vendasDia: vendaHoje,
-                clientesAtendidos: document.getElementById('clientesAtendidos').value || 0,
-                clientesCompraram: document.getElementById('clientesCompraram').value || 0,
-                produtos: {
-                    grau: document.getElementById('prodGrau').value || 0,
-                    solar: document.getElementById('prodSolar').value || 0,
-                    infantil: document.getElementById('prodInfantil').value || 0,
-                    armacaoAmmo: document.getElementById('prodArmacaoAmmo').value || 0,
-                    armacaoGrife: document.getElementById('prodArmacaoGrife').value || 0,
-                    lentes: document.getElementById('prodLentes').value || 0,
-                    kit: document.getElementById('prodKit').value || 0,
-                    corrente: document.getElementById('prodCorrente').value || 0,
-                    seguro: document.getElementById('prodSeguro').value || 0
-                },
-                calculados: {
-                    acumulado: acumuladoHistorico + vendaHoje,
-                    perdaDinheiro: (parseInt(document.getElementById('clientesAtendidos').value || 0) - parseInt(document.getElementById('clientesCompraram').value || 0)) * 500,
-                    itensPerdidos: obterTextoPerdasLimpo()
-                }
-            };
-
-            fetch(GOOGLE_SCRIPT_URL, {
-                method: 'POST',
-                mode: 'no-cors',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(data)
-            }).then(() => {
-                alert('✅ Dados salvos!');
-                // Atualiza o acumulado localmente para o usuario atual
-                localStorage.setItem(acumKey, data.calculados.acumulado);
-                
-                document.querySelectorAll('.input-dia').forEach(i => i.value = '');
-                calcTudo();
-                btn.innerText = "💾 Salvar Meus Dados";
-                btn.disabled = false;
-            }).catch(err => {
-                alert('Erro: ' + err);
-                btn.disabled = false;
-            });
-        }
+    function calcTudo() {
+        const meta = parseFloat(document.getElementById('metaMensal').value || 0);
+        const vendaHoje = parseFloat(document.getElementById('vendaDia').value || 0);
         
-        function gerarWhatsapp() {
-            const venda = document.getElementById('vendaDia').value;
-            window.open(`https://wa.me/?text=Relatorio ${currentConsultor}: Venda R$ ${venda}`, '_blank');
+        // Valores históricos da planilha
+        const acumVendasHist = parseFloat(localStorage.getItem(`acum_${user}`) || 0);
+        const acumPtsHist = parseFloat(localStorage.getItem(`pts_acum_${user}`) || 0);
+        
+        // Cálculo em tempo real: Histórico + Hoje + 10 bônus se houver venda
+        const totalVendas = acumVendasHist + vendaHoje;
+        const bonusHoje = vendaHoje > 0 ? 10 : 0;
+        const totalPontos = acumPtsHist + Math.floor(vendaHoje) + bonusHoje;
+        
+        localStorage.setItem(`meta_${user}`, meta);
+
+        // Atualiza interface de Pontos
+        document.getElementById('viewPontos').innerText = totalPontos.toLocaleString();
+        document.getElementById('bar-points').style.width = Math.min((totalPontos/30000)*100, 100) + '%';
+        
+        const txtFalta = document.getElementById('txt-falta');
+        if(totalPontos >= 30000) {
+            txtFalta.innerText = "QUALIFICADO PARA O PRÊMIO! 🏆";
+            txtFalta.style.color = "var(--success)";
+        } else {
+            txtFalta.innerText = `Faltam ${(30000 - totalPontos).toLocaleString()} pts para qualificação!`;
+            txtFalta.style.color = "var(--gold)";
         }
-    </script>
+
+        // Atualiza interface Financeira
+        document.getElementById('viewAcumulado').innerText = `R$ ${totalVendas.toLocaleString('pt-BR', {minimumFractionDigits:2})}`;
+        const faltante = meta - totalVendas;
+        document.getElementById('metaDiariaSug').innerText = `R$ ${faltante > 0 ? (faltante/26).toLocaleString('pt-BR', {maximumFractionDigits:0}) : 0}`;
+
+        // Regras de Perdas 1:1
+        const atend = parseInt(document.getElementById('atendidos').value || 0);
+        const comp = parseInt(document.getElementById('compraram').value || 0);
+        const nComp = atend - comp;
+        const grau = parseInt(document.getElementById('pGrau').value || 0);
+        const solar = parseInt(document.getElementById('pSolar').value || 0);
+        const kit = parseInt(document.getElementById('pKit').value || 0);
+        const grife = parseInt(document.getElementById('pGrife').value || 0);
+        const seguro = parseInt(document.getElementById('pSeguro').value || 0);
+        const totalOculos = grau + solar;
+
+        let html = [];
+        if(nComp > 0) html.push(`<div class="loss-item">📉 R$ ${(nComp * 500).toLocaleString('pt-BR')} perdidos (${nComp} s/ compra)</div>`);
+        if(grife < grau) html.push(`<div class="loss-item">👓 Falta ${grau - grife} Grife (1:1 c/ Grau)</div>`);
+        if(kit < totalOculos) html.push(`<div class="loss-item">🧴 Falta ${totalOculos - kit} Kit (1 por óculos)</div>`);
+        if(seguro < totalOculos) html.push(`<div class="loss-item">🛡️ Falta ${totalOculos - seguro} Seguro (1 por óculos)</div>`);
+        
+        document.getElementById('analisePerdas').innerHTML = html.length ? html.join('') : '<div class="success-msg">⭐ PERFORMANCE 100%!</div>';
+    }
+
+    async function enviarDados() {
+        const btn = event.target;
+        btn.disabled = true; btn.innerText = "Sincronizando...";
+        
+        const data = {
+            consultor: user,
+            unidade: localStorage.getItem('ammo_otica'),
+            vendasDia: document.getElementById('vendaDia').value,
+            atendidos: document.getElementById('atendidos').value,
+            compraram: document.getElementById('compraram').value,
+            prod: {
+                grau: document.getElementById('pGrau').value || 0,
+                solar: document.getElementById('pSolar').value || 0,
+                kit: document.getElementById('pKit').value || 0,
+                grife: document.getElementById('pGrife').value || 0,
+                seguro: document.getElementById('pSeguro').value || 0
+            }
+        };
+
+        try {
+            await fetch(API, { method: 'POST', mode: 'no-cors', body: JSON.stringify(data) });
+            alert("Sucesso! Você ganhou +10 pontos bônus.");
+            window.open(`https://wa.me/5544999610278?text=Realizei minha tarefa diária e quero resgatar meus pontos.`, '_blank');
+            document.querySelectorAll('.card input').forEach(i => { if(i.id !== 'metaMensal') i.value = ''; });
+            loadData();
+        } catch(e) { alert("Erro ao salvar dados."); }
+        
+        btn.disabled = false; btn.innerText = "SALVAR REGISTRO";
+    }
+
+    function logout() { localStorage.clear(); location.reload(); }
+</script>
 </body>
 </html>
-
-
-
-
