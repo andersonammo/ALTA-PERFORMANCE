@@ -123,7 +123,7 @@
 
 <script>
     // --- INSIRA SEU URL ABAIXO ---
-    const API = 'https://script.google.com/macros/s/AKfycbxOBszumx0-dxL1VjgQJNlslxaCyMyvCUn8EWjargQqGwx0xzjT-q99njIM2ST1xLdWdg/exec'; 
+    const API = 'https://script.google.com/macros/s/AKfycbzJNlqSSxP88vGCFrEk4Zi8DF87tgwz8E5t0DW8qiO-nxlkL-YQ7qtm1vGk705QPXpT8Q/exec'; 
 
     let user = "";
 
@@ -223,53 +223,7 @@
         
         document.getElementById('analisePerdas').innerHTML = html.length ? html.join('') : '<div class="success-msg">⭐ PERFORMANCE 100%!</div>';
     }
-    // Dentro da função que recebe os dados (renderData ou similar):
 
-    async function fetchConsultorData() {
-    const nomeConsultor = "NOME_DO_CONSULTOR"; // Variável que identifica o usuário
-    
-    // 1. Busca a Meta Travada no Celular (Local Storage)
-    const metaMensal = parseFloat(localStorage.getItem('meta_mensal_ammo')) || 0;
-
-    try {
-        const response = await fetch(`${API_URL}?consultor=${nomeConsultor}`);
-        const data = await response.json();
-
-        // 2. Pega o Acumulado que vem da Planilha
-        const acumuladoVendas = parseFloat(data.acumulado) || 0;
-
-        // 3. CÁLCULO DA META FALTANTE (Saldo)
-        const saldoFaltante = metaMensal - acumuladoVendas;
-        const saldoPositivo = saldoFaltante > 0 ? saldoFaltante : 0; // Se bateu a meta, o saldo é 0
-
-        // 4. PEGA OS DIAS RESTANTES (Vem do Google Script)
-        // Se o GS não enviar, usamos o cálculo de dias corridos até o fim do mês como reserva
-        const diasRestantes = parseInt(data.diasRestantes) || 1; 
-
-        // 5. CÁLCULO DA META DIÁRIA (Saldo / Dias que Faltam)
-        const metaDiariaNecessaria = saldoPositivo / diasRestantes;
-
-        // --- ATUALIZAÇÃO DA TELA (IDs Exemplo) ---
-        
-        // Exibe o Acumulado (Coluna D somada)
-        document.getElementById('txtAcumulado').innerText = acumuladoVendas.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-        
-        // Exibe a Meta Mensal Travada
-        document.getElementById('txtMetaMensal').innerText = metaMensal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-
-        // Exibe o Saldo Faltante (Meta - Acumulado)
-        document.getElementById('txtSaldoFaltante').innerText = saldoPositivo.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-
-        // Exibe a Meta Diária (Saldo / Dias)
-        document.getElementById('txtMetaDiaria').innerText = metaDiariaNecessaria.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-
-        // Exibe quantos dias faltam
-        document.getElementById('txtDiasFaltam').innerText = `${diasRestantes} dias úteis restantes`;
-
-    } catch (e) {
-        console.error("Erro no cálculo de performance:", e);
-    }
-}
     async function enviarDados() {
         const btn = event.target;
         btn.disabled = true; btn.innerText = "Sincronizando...";
