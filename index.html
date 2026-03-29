@@ -223,6 +223,21 @@
         
         document.getElementById('analisePerdas').innerHTML = html.length ? html.join('') : '<div class="success-msg">⭐ PERFORMANCE 100%!</div>';
     }
+    // Dentro da função que recebe os dados (renderData ou similar):
+
+    function atualizarTelaConsultor(data) {
+    // Exibe o acumulado de vendas
+    document.getElementById('acumuladoVendas').innerText = `R$ ${data.acumulado.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`;
+    
+    // Exibe quanto falta para a meta
+    document.getElementById('faltaMeta').innerText = `R$ ${data.faltaParaMeta.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`;
+    
+    // Exibe a meta diária necessária
+    document.getElementById('metaDiaria').innerText = `R$ ${data.sugestaoDiaria.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`;
+    
+    // Exibe dias restantes
+    document.getElementById('diasUteis').innerText = `${data.diasRestantes} dias úteis`;
+}
 
     async function enviarDados() {
         const btn = event.target;
