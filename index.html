@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Ammo Performance - Painel</title>
+    <title>VISION LINE ALTA PERFORMANCE</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="icon" href="https://img.icons8.com/emoji/48/high-voltage.png" type="image/png">
     <style>
@@ -39,7 +39,7 @@
 
     <div id="login-screen">
         <div class="login-box">
-            <h2 style="margin-top:0;">Acesso Ammo</h2>
+            <h2 style="margin-top:0;">Acesso Vision Line Painel</h2>
             <input type="text" id="loginConsultor" placeholder="Seu Nome" class="login-input">
             <input type="text" id="loginOtica" placeholder="Sua Unidade" class="login-input" style="margin-top:10px;">
             <button class="btn btn-main" onclick="realizarLogin()">ENTRAR</button>
@@ -108,6 +108,7 @@
                         <input type="number" id="pSolar" placeholder="Óculos Solar" oninput="calcTudo()">
                         <input type="number" id="pKit" placeholder="Kits Limpa" oninput="calcTudo()">
                         <input type="number" id="pGrife" placeholder="Armação Grife" oninput="calcTudo()">
+                        <input type="number" id="pMarcaPropria" placeholder="Marca Propria" oninput="calcTudo()">
                         <input type="number" id="pSeguro" placeholder="Seguros" oninput="calcTudo()">
                     </div>
                     <button class="btn btn-main" onclick="enviarDados()">SALVAR REGISTRO</button>
@@ -139,13 +140,12 @@
     </div>
 
 <script>
-    const API = 'https://script.google.com/macros/s/AKfycbxOBszumx0-dxL1VjgQJNlslxaCyMyvCUn8EWjargQqGwx0xzjT-q99njIM2ST1xLdWdg/exec'; 
+    const API = 'https://script.google.com/macros/s/AKfycbzLkbwDp-r9CPGkzSEEbXurqgSLtBKEg6-oqRHbX_VBUnyS-f4EZrcteU6oQPBOWfN0/exec'; 
     let user = "";
-    let diasUteisRestantes = 26; // Valor padrão caso a API falhe
+    let diasUteisRestantes = 26; 
 
     document.addEventListener('DOMContentLoaded', () => {
         checkLogin();
-        verificarMetaSalva();
     });
 
     // --- LOGICA DE TABS ---
@@ -165,6 +165,7 @@
             document.getElementById('uNome').innerText = user;
             document.getElementById('uNomeHeader').innerText = user;
             document.getElementById('uOticaHeader').innerText = localStorage.getItem('ammo_otica');
+            verificarMetaSalva();
             loadData();
         }
     }
@@ -176,6 +177,8 @@
             localStorage.setItem('ammo_user', n); 
             localStorage.setItem('ammo_otica', o); 
             location.reload(); 
+        } else {
+            alert("Preencha todos os campos para entrar.");
         }
     }
 
@@ -262,7 +265,7 @@
         // UI Financeira
         document.getElementById('viewAcumulado').innerText = `R$ ${totalVendas.toLocaleString('pt-BR', {minimumFractionDigits:2})}`;
         const faltante = meta - totalVendas;
-        const metaDiaria = faltante > 0 ? (faltante / diasUteisRestantes) : 0;
+        const metaDiaria = (faltante > 0 && diasUteisRestantes > 0) ? (faltante / diasUteisRestantes) : 0;
         document.getElementById('metaDiariaSug').innerText = `R$ ${metaDiaria.toLocaleString('pt-BR', {maximumFractionDigits:0})}`;
 
         // Regras de Perdas 1:1
@@ -273,12 +276,13 @@
         const solar = parseInt(document.getElementById('pSolar').value || 0);
         const kit = parseInt(document.getElementById('pKit').value || 0);
         const grife = parseInt(document.getElementById('pGrife').value || 0);
+        const marcaPropria = parseInt(document.getElementById('pMarcaPropria').value || 0);
         const seguro = parseInt(document.getElementById('pSeguro').value || 0);
         const totalOculos = grau + solar;
 
         let html = [];
         if(nComp > 0) html.push(`<div class="loss-item">📉 R$ ${(nComp * 500).toLocaleString('pt-BR')} perdidos (${nComp} s/ compra)</div>`);
-        if(grife < grau) html.push(`<div class="loss-item">👓 Falta ${grau - grife} Grife (1:1 c/ Grau)</div>`);
+        if(grife < grau) html.push(`<div class="loss-item">👓 Falta ${grau - grife} Solar (1:1 c/ Grau)</div>`);
         if(kit < totalOculos) html.push(`<div class="loss-item">🧴 Falta ${totalOculos - kit} Kit (1 por óculos)</div>`);
         if(seguro < totalOculos) html.push(`<div class="loss-item">🛡️ Falta ${totalOculos - seguro} Seguro (1 por óculos)</div>`);
         
@@ -300,19 +304,22 @@
                 solar: document.getElementById('pSolar').value || 0,
                 kit: document.getElementById('pKit').value || 0,
                 grife: document.getElementById('pGrife').value || 0,
+                marcaPropria: document.getElementById('pMarcaPropria').value || 0,
                 seguro: document.getElementById('pSeguro').value || 0
             }
         };
 
         try {
             await fetch(API, { method: 'POST', mode: 'no-cors', body: JSON.stringify(data) });
-            alert("Sucesso! Você ganhou +10 pontos bônus.");
+            alert("Sucesso! Registro salvo e sincronizado.");
             window.open(`https://wa.me/5544999610278?text=Realizei minha tarefa diária e quero resgatar meus pontos.`, '_blank');
             document.querySelectorAll('.card input').forEach(i => { if(i.id !== 'inputMeta') i.value = ''; });
             loadData();
-        } catch(e) { alert("Erro ao salvar dados."); }
-        
-        btn.disabled = false; btn.innerText = "SALVAR REGISTRO";
+        } catch(e) { 
+            alert("Erro ao salvar dados localmente."); 
+        } finally {
+            btn.disabled = false; btn.innerText = "SALVAR REGISTRO";
+        }
     }
 
     function logout() { localStorage.clear(); location.reload(); }
